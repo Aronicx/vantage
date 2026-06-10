@@ -1,8 +1,9 @@
+
 "use client";
 
 import React from 'react';
-import { Country, Alliance, Settlement, Province } from '@/app/lib/game-logic';
-import { Landmark, Building2, ShieldAlert } from 'lucide-react';
+import { Country, Alliance } from '@/app/lib/game-logic';
+import { Landmark } from 'lucide-react';
 
 interface MapProps {
   countries: Country[];
@@ -34,65 +35,69 @@ export const TacticalMap: React.FC<MapProps> = ({
         preserveAspectRatio="xMidYMid meet"
       >
         <defs>
-          <filter id="shadow">
-            <feDropShadow dx="0" dy="1" stdDeviation="2" floodOpacity="0.1" />
+          {/* Crisp Geo Filter: Merges the grid cells into solid organic shapes */}
+          <filter id="crisp-geo">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
+            <feColorMatrix 
+              in="blur" 
+              mode="matrix" 
+              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 25 -9" 
+              result="crisp" 
+            />
+            <feComposite in="SourceGraphic" in2="crisp" operator="atop" />
+          </filter>
+          
+          <filter id="text-glow">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="blur" />
+            <feFlood floodColor="white" result="flood" />
+            <feComposite in="flood" in2="blur" operator="in" result="glow" />
+            <feMerge>
+              <feMergeNode in="glow" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
           </filter>
         </defs>
 
-        {/* Territory Polygons */}
-        {countries.map(c => {
-          const color = getDisplayColor(c);
-          const isSelected = selection.includes(c.id);
-          
-          return (
-            <g key={c.id} className="cursor-pointer" onClick={() => onSelectCountry(c)}>
-              {/* Internal Provinces */}
-              {c.provinces.map((prov, pidx) => (
-                <g key={`${c.id}-prov-${pidx}`}>
-                  {prov.points.map((p, i) => (
-                    <rect 
-                      key={`${c.id}-p-${i}`} 
-                      x={p.x - 5} 
-                      y={p.y - 5} 
-                      width={10.5} 
-                      height={10.5} 
-                      fill={color} 
-                    />
-                  ))}
-                  {/* Subtle province boundaries */}
-                  {prov.points.map((p, i) => (
-                    <rect 
-                      key={`${c.id}-pb-${i}`} 
-                      x={p.x - 5} 
-                      y={p.y - 5} 
-                      width={10.5} 
-                      height={10.5} 
-                      fill="none" 
-                      stroke="rgba(0,0,0,0.08)"
-                      strokeWidth="0.4"
-                    />
-                  ))}
-                </g>
-              ))}
-
-              {/* Country Highlight Overlay */}
-              <g opacity={isSelected ? 1 : 0.8}>
+        {/* Territory Polygons (Layered for solid look) */}
+        <g filter="url(#crisp-geo)">
+          {countries.map(c => {
+            const color = getDisplayColor(c);
+            return (
+              <g key={c.id} className="cursor-pointer" onClick={() => onSelectCountry(c)}>
                 {c.points.map((p, i) => (
                   <rect 
-                    key={`${c.id}-outline-${i}`} 
-                    x={p.x - 5} 
-                    y={p.y - 5} 
-                    width={10.5} 
-                    height={10.5} 
-                    fill="none" 
-                    stroke="rgba(0,0,0,0.2)"
-                    strokeWidth="0.3"
+                    key={`${c.id}-p-${i}`} 
+                    x={p.x - 5.5} 
+                    y={p.y - 5.5} 
+                    width={11.5} 
+                    height={11.5} 
+                    fill={color} 
                   />
                 ))}
               </g>
-            </g>
-          );
-        })}
+            );
+          })}
+        </g>
+
+        {/* Province Outlines (Natural Borders) */}
+        <g opacity="0.15" className="pointer-events-none">
+          {countries.map(c => (
+            c.provinces.map((prov, pidx) => (
+              prov.points.map((p, i) => (
+                <rect 
+                  key={`${c.id}-prov-${pidx}-${i}`} 
+                  x={p.x - 5} 
+                  y={p.y - 5} 
+                  width={10.5} 
+                  height={10.5} 
+                  fill="none" 
+                  stroke="black"
+                  strokeWidth="0.5"
+                />
+              ))
+            ))
+          ))}
+        </g>
 
         {/* Crisp Selection Outline */}
         {selection.map(id => {
@@ -109,8 +114,8 @@ export const TacticalMap: React.FC<MapProps> = ({
                   height={12} 
                   fill="none" 
                   stroke="white" 
-                  strokeWidth="2"
-                  strokeOpacity="0.6"
+                  strokeWidth="2.5"
+                  strokeOpacity="0.8"
                 />
               ))}
             </g>
@@ -118,44 +123,41 @@ export const TacticalMap: React.FC<MapProps> = ({
         })}
 
         {/* Labels & Landmarks */}
-        {countries.map(c => (
-          <React.Fragment key={`${c.id}-entities`}>
-            {/* Country Name Label */}
-            <text 
-              x={c.center.x} 
-              y={c.center.y} 
-              textAnchor="middle" 
-              className="pointer-events-none uppercase font-headline font-bold text-[10px] tracking-widest fill-black/60"
-              style={{ textShadow: '0 0 3px rgba(255,255,255,0.9)' }}
-            >
-              {c.name}
-            </text>
+        {countries.map(c => {
+          // Find the capital settlement
+          const capital = c.settlements.find(s => s.type === 'capital');
+          if (!capital) return null;
 
-            {/* Settlements */}
-            {c.settlements.map(s => (
-              <g key={s.id} className="pointer-events-none">
+          return (
+            <React.Fragment key={`${c.id}-hud`}>
+              {/* Capital Marker */}
+              <g className="pointer-events-none">
                 <circle 
-                  cx={s.coords.x} 
-                  cy={s.coords.y} 
-                  r={7} 
+                  cx={capital.coords.x} 
+                  cy={capital.coords.y} 
+                  r={8} 
                   fill="white"
                   stroke="black"
-                  strokeWidth="1.2"
-                  filter="url(#shadow)"
+                  strokeWidth="1.5"
                 />
-                <g transform={`translate(${s.coords.x - 4.5}, ${s.coords.y - 4.5})`}>
-                  {s.type === 'capital' ? (
-                    <Landmark size={9} className="text-black" />
-                  ) : s.type === 'city' ? (
-                    <Building2 size={7} className="text-black/60" />
-                  ) : (
-                    <ShieldAlert size={7} className="text-destructive" />
-                  )}
+                <g transform={`translate(${capital.coords.x - 4.5}, ${capital.coords.y - 4.5})`}>
+                  <Landmark size={9} className="text-black" />
                 </g>
               </g>
-            ))}
-          </React.Fragment>
-        ))}
+
+              {/* Country Name Label - Offset from capital to avoid overlap */}
+              <text 
+                x={capital.coords.x} 
+                y={capital.coords.y - 18} 
+                textAnchor="middle" 
+                className="pointer-events-none uppercase font-headline font-bold text-[11px] tracking-[0.2em] fill-black"
+                filter="url(#text-glow)"
+              >
+                {c.name}
+              </text>
+            </React.Fragment>
+          );
+        })}
       </svg>
     </div>
   );

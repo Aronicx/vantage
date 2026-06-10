@@ -1,3 +1,4 @@
+
 import { generateGameWorldLore } from '@/ai/flows/generate-game-world-lore';
 
 export interface Point {
@@ -65,9 +66,9 @@ export interface GameState {
 }
 
 const POLITICAL_COLORS = [
-  '#E63946', '#457B9D', '#1D3557', '#2A9D8F', '#E9C46A', 
-  '#F4A261', '#E76F51', '#264653', '#606C38', '#283618', 
-  '#DDA15E', '#BC6C25', '#9B2226', '#8338EC', '#3A86FF'
+  '#F28482', '#84A59D', '#F5CAC3', '#F7EDE2', '#F6BD60', 
+  '#FF9F1C', '#2EC4B6', '#E71D36', '#FF9F1C', '#CB997E', 
+  '#A5A58D', '#6B705C', '#B7B7A4', '#FFE8D6', '#DDBEA9'
 ];
 
 const FLAG_PALETTES = [
@@ -84,21 +85,21 @@ function getDistance(p1: Point, p2: Point): number {
 }
 
 export async function generateNewWorld(width: number, height: number): Promise<GameState> {
-  const countryCount = 10 + Math.floor(Math.random() * 4);
+  const countryCount = 8 + Math.floor(Math.random() * 4);
   const countries: Country[] = [];
   
   // Create a single island by clustering land centers near the middle
   const landCenters: {p: Point, r: number}[] = [];
-  const landCenterCount = 5 + Math.floor(Math.random() * 3);
-  const padding = width * 0.15;
+  const landCenterCount = 6 + Math.floor(Math.random() * 4);
+  const padding = width * 0.2;
   
   for(let i = 0; i < landCenterCount; i++) {
     landCenters.push({
       p: {
-        x: width * 0.5 + (Math.random() - 0.5) * width * 0.3,
-        y: height * 0.5 + (Math.random() - 0.5) * height * 0.3
+        x: width * 0.5 + (Math.random() - 0.5) * width * 0.4,
+        y: height * 0.5 + (Math.random() - 0.5) * height * 0.4
       },
-      r: width * (0.15 + Math.random() * 0.05)
+      r: width * (0.15 + Math.random() * 0.1)
     });
   }
 
@@ -113,14 +114,13 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     }
   }
 
-  // Seed countries with spacing to ensure balance
+  // Seed countries
   const seeds: Point[] = [];
   for (let i = 0; i < countryCount; i++) {
     let bestSeed = landPoints[Math.floor(Math.random() * landPoints.length)];
     let maxMinDist = -1;
 
-    // Try a few random points and pick the one farthest from existing seeds
-    for (let attempt = 0; attempt < 10; attempt++) {
+    for (let attempt = 0; attempt < 15; attempt++) {
       const candidate = landPoints[Math.floor(Math.random() * landPoints.length)];
       let minDist = Infinity;
       seeds.forEach(s => {
@@ -164,28 +164,23 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     }
   });
 
-  // Filter out extremely tiny countries and reassign points if necessary (simplified: just filter)
-  const finalCountries = countries.filter(c => c.points.length > 8);
+  const finalCountries = countries.filter(c => c.points.length > 10);
 
   finalCountries.forEach(c => {
-    // Balanced Stats based on Size
-    const sizeFactor = c.points.length / 50; // Normalize size
-    
-    // Efficiency/Luck factor: Some small countries are high-tech/dense
-    // Small chance for a "Powerhouse" outlier
-    const isPowerhouse = Math.random() > 0.85;
-    const luckMultiplier = isPowerhouse ? (1.5 + Math.random()) : (0.8 + Math.random() * 0.4);
+    const sizeFactor = c.points.length / 40;
+    const isPowerhouse = Math.random() > 0.88;
+    const luckMultiplier = isPowerhouse ? (1.6 + Math.random()) : (0.85 + Math.random() * 0.4);
 
-    c.stats.economy = (100 + sizeFactor * 400) * luckMultiplier;
-    c.stats.population = (5 + sizeFactor * 30) * luckMultiplier;
+    c.stats.economy = (120 + sizeFactor * 450) * luckMultiplier;
+    c.stats.population = (6 + sizeFactor * 35) * luckMultiplier;
     c.stats.military = {
-      ground: (40 + sizeFactor * 80) * luckMultiplier,
-      air: (10 + sizeFactor * 30) * luckMultiplier,
-      naval: (5 + sizeFactor * 25) * luckMultiplier,
+      ground: (45 + sizeFactor * 90) * luckMultiplier,
+      air: (15 + sizeFactor * 35) * luckMultiplier,
+      naval: (8 + sizeFactor * 30) * luckMultiplier,
     };
 
-    // Internal provinces
-    const provinceCount = 2 + Math.floor(Math.random() * 3);
+    // Organic Internal Provinces
+    const provinceCount = 3 + Math.floor(Math.random() * 4);
     const provinceSeeds: Point[] = [];
     for(let i=0; i<provinceCount; i++) {
       provinceSeeds.push(c.points[Math.floor(Math.random() * c.points.length)]);
@@ -205,19 +200,8 @@ export async function generateNewWorld(width: number, height: number): Promise<G
       c.provinces[closestIdx].points.push(p);
     });
 
-    // Settlements
+    // Settlements - Exactly one capital, positioned near geographic center
     c.settlements.push({ id: `${c.id}-cap`, name: `Capital`, type: 'capital', coords: c.center, ownerId: c.id });
-    const settlementCount = 1 + Math.floor(Math.random() * 3);
-    for (let i = 0; i < settlementCount; i++) {
-      const randomPoint = c.points[Math.floor(Math.random() * c.points.length)];
-      c.settlements.push({
-        id: `${c.id}-city-${i}`,
-        name: 'Settlement',
-        type: Math.random() > 0.4 ? 'city' : 'outpost',
-        coords: randomPoint,
-        ownerId: c.id
-      });
-    }
   });
 
   // Generate Lore
@@ -228,9 +212,8 @@ export async function generateNewWorld(width: number, height: number): Promise<G
       if (countryLore) {
         c.name = countryLore.name;
         const { cityNamesExamples } = countryLore.namingConventions;
-        c.settlements.forEach((s, idx) => { 
+        c.settlements.forEach((s) => { 
           if (s.type === 'capital') s.name = cityNamesExamples[0] || s.name;
-          else if (cityNamesExamples[idx + 1]) s.name = cityNamesExamples[idx + 1];
         });
       }
     });
@@ -272,8 +255,7 @@ export function executeBattle(state: GameState, id1: string, id2: string): { sta
   const power1 = c1.stats.military.ground + c1.stats.military.air + (c1.stats.military.naval * 0.5);
   const power2 = c2.stats.military.ground + c2.stats.military.air + (c2.stats.military.naval * 0.5);
 
-  // Strength based outcome with slight randomness
-  const variability = 0.8 + Math.random() * 0.4;
+  const variability = 0.85 + Math.random() * 0.3;
   const power1Adjusted = power1 * variability;
   
   const winner = power1Adjusted > power2 ? c1 : c2;
@@ -281,18 +263,19 @@ export function executeBattle(state: GameState, id1: string, id2: string): { sta
   const ratio = Math.max(power1, power2) / Math.min(power1, power2);
 
   let lossPercent = 0.15;
-  let resultText = 'Minor territory redistribution following border engagement.';
-  if (ratio > 1.8) { lossPercent = 0.3; resultText = 'Significant breakthrough leads to territorial gain.'; }
-  if (ratio > 3.5) { lossPercent = 0.55; resultText = 'Decisive victory: Major sectors annexed.'; }
+  let resultText = 'Minor border adjustment after military standoff.';
+  if (ratio > 1.8) { lossPercent = 0.35; resultText = 'Strategic breakthrough leads to significant annexation.'; }
+  if (ratio > 3.5) { lossPercent = 0.6; resultText = 'Total collapse of defenses: Major territory shift.'; }
 
   const pointsToTransferCount = Math.floor(loser.points.length * lossPercent);
   loser.points.sort((a, b) => getDistance(a, winner.center) - getDistance(b, winner.center));
   const transferredPoints = loser.points.splice(0, pointsToTransferCount);
   winner.points.push(...transferredPoints);
 
-  // Recalculate provinces
+  // Recalculate provinces for both countries
   [winner, loser].forEach(country => {
     if (country.points.length === 0) return;
+    // Keep centers stable but re-assign points
     country.provinces.forEach(p => p.points = []);
     country.points.forEach(p => {
       let closestIdx = 0;
@@ -305,18 +288,9 @@ export function executeBattle(state: GameState, id1: string, id2: string): { sta
     });
   });
 
-  loser.settlements.forEach(s => {
-    const isNowCaptured = transferredPoints.some(tp => getDistance(tp, s.coords) < 15);
-    if (isNowCaptured) s.ownerId = winner.id;
-  });
-
-  const capturedSettlements = loser.settlements.filter(s => s.ownerId === winner.id);
-  loser.settlements = loser.settlements.filter(s => s.ownerId !== winner.id);
-  winner.settlements.push(...capturedSettlements);
-
   let finalCountries = [...state.countries];
   if (loser.points.length === 0) {
-    resultText = `${loser.name} has been formally annexed by ${winner.name}.`;
+    resultText = `${loser.name} has been fully absorbed by ${winner.name}.`;
     finalCountries = finalCountries.filter(c => c.id !== loser.id);
   }
 
@@ -365,8 +339,8 @@ export function createAlliance(state: GameState, countryIds: string[]): GameStat
   const leader = state.countries.find(c => c.id === strongest.id);
   const alliance: Alliance = {
     id: `alliance-${state.alliances.length}-${Date.now()}`,
-    name: `${leader?.name} Coalition`,
-    color: ['#FF5722', '#9C27B0', '#00BCD4', '#4CAF50'][state.alliances.length % 4],
+    name: `${leader?.name} Bloc`,
+    color: ['#F9C74F', '#4D908E', '#577590', '#277DA1'][state.alliances.length % 4],
     countryIds: [...countryIds]
   };
 
