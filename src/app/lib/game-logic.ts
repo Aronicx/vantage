@@ -69,7 +69,7 @@ export interface GameState {
 
 const POLITICAL_COLORS = [
   '#F28482', '#84A59D', '#F5CAC3', '#F7EDE2', '#F6BD60', 
-  '#FF9F1C', '#2EC4B6', '#E71D36', '#FF9F1C', '#CB997E', 
+  '#FF9F1C', '#2EC4B6', '#E71D36', '#CB997E', 
   '#A5A58D', '#6B705C', '#B7B7A4', '#FFE8D6', '#DDBEA9'
 ];
 
@@ -192,11 +192,10 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     c.stats.isLandlocked = isLandlocked;
 
     const sizeFactor = c.points.length / 50; 
-    // Luck multiplier allows smaller nations to be "punching above their weight"
     const isPowerhouse = Math.random() > 0.90;
     const luckMultiplier = isPowerhouse ? (1.5 + Math.random() * 0.8) : (0.85 + Math.random() * 0.4);
     
-    const geoEconBonus = isLandlocked ? 0.90 : 1.10; // Softened penalties
+    const geoEconBonus = isLandlocked ? 0.90 : 1.10;
 
     c.stats.economy = (100 + sizeFactor * 400) * luckMultiplier * geoEconBonus;
     c.stats.population = (5 + sizeFactor * 30) * luckMultiplier;
@@ -206,7 +205,6 @@ export async function generateNewWorld(width: number, height: number): Promise<G
       naval: isLandlocked ? (sizeFactor * 2) : (10 + sizeFactor * 40) * luckMultiplier,
     };
 
-    // Growth rates are slightly variable so anyone can become a superpower over centuries
     c.stats.growthRate = (isLandlocked ? 1.009 : 1.015) + (Math.random() * 0.01);
 
     const provinceCount = Math.max(2, Math.floor(c.points.length / 30));
@@ -261,7 +259,6 @@ export function processTick(state: GameState): GameState {
 
   const updatedCountries = state.countries.map(c => {
     const stats = { ...c.stats };
-    // Add a small random element to growth each year so it's not perfectly linear
     const annualVariance = 0.998 + (Math.random() * 0.004);
     let currentGrowth = stats.growthRate * annualVariance;
 
@@ -309,7 +306,6 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   } else {
     const power1 = calculatePower(c1);
     const power2 = calculatePower(c2);
-    // Variability factor (0.85 to 1.15) allows for upsets
     const variability1 = 0.85 + Math.random() * 0.3;
     const power1Adjusted = power1 * variability1;
     winner = power1Adjusted > power2 ? c1 : c2;
