@@ -13,7 +13,6 @@ import {
   Pause,
   ListOrdered,
   Plus,
-  Check,
   X,
   Users,
   Info
@@ -41,14 +40,15 @@ export default function VantagePoint() {
 
   useEffect(() => {
     if (world?.gameStarted && !world.isPaused) {
+      const interval = 3000 / (world.simulationSpeed || 1);
       timerRef.current = setInterval(() => {
         setWorld(prev => prev ? processTick(prev) : null);
-      }, 3000);
+      }, interval);
     } else {
       if (timerRef.current) clearInterval(timerRef.current);
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [world?.gameStarted, world?.isPaused]);
+  }, [world?.gameStarted, world?.isPaused, world?.simulationSpeed]);
 
   const initWorld = async () => {
     setLoading(true);
@@ -58,7 +58,7 @@ export default function VantagePoint() {
   };
 
   const handleStart = () => {
-    if (world) setWorld({ ...world, gameStarted: true });
+    if (world) setWorld({ ...world, gameStarted: true, isPaused: false });
   };
 
   const handleCountryClick = (c: Country) => {
@@ -81,22 +81,17 @@ export default function VantagePoint() {
     if (selection.length !== 2 || !world) return;
     const { state, result } = executeBattle(world, selection[0], selection[1]);
     setWorld(state);
-    toast({ title: "Battle Conclusion", description: result });
+    toast({ title: "Operation Complete", description: result });
     setSelection([]);
     setMode('none');
   };
 
   const confirmAlliance = () => {
     if (selection.length === 0 || !world) return;
-    if (world.alliances.length >= 4) {
-      toast({ title: "Limit Reached", description: "Maximum 4 alliances supported.", variant: "destructive" });
-      return;
-    }
     const nextWorld = createAlliance(world, selection);
     setWorld(nextWorld);
     setSelection([]);
-    toast({ title: "Alliance Formed", description: `Alliance ${nextWorld.alliances.length} created.` });
-    // Keep in war-menu to allow more alliances or start war
+    toast({ title: "Coalition Formed", description: `Alliance ${nextWorld.alliances.length} established.` });
     setMode('war-menu');
   };
 
@@ -105,209 +100,199 @@ export default function VantagePoint() {
     const nextWorld = executeAllianceWar(world);
     setWorld({ ...nextWorld, alliances: [] }); 
     setMode('none');
-    toast({ title: "Great War Ends", description: "Borders have been redrawn based on coalition power." });
+    toast({ title: "Conflict Resolution", description: "Strategic reallocation of territories complete." });
   };
 
   if (!world || !world.gameStarted) {
     return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-[#0F1216] text-white gap-8">
-        <div className="text-center space-y-2">
-          <Globe className="h-20 w-20 text-accent mx-auto animate-pulse mb-4" />
-          <h1 className="text-5xl font-headline font-bold tracking-[0.3em]">VANTAGE POINT</h1>
-          <p className="text-muted-foreground uppercase tracking-widest text-sm">Geopolitical Map Strategy</p>
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-white text-black gap-8">
+        <div className="text-center space-y-4">
+          <Globe className="h-24 w-24 text-black mx-auto mb-4" />
+          <h1 className="text-6xl font-headline font-bold tracking-tighter">VANTAGE POINT</h1>
+          <p className="text-muted-foreground uppercase tracking-[0.4em] text-xs">Political Sandbox Simulation</p>
         </div>
-        <Button size="lg" className="px-12 py-8 text-xl font-headline bg-accent text-background hover:bg-accent/90" onClick={handleStart} disabled={loading}>
-          {loading ? "INITIALIZING WORLD..." : "START SIMULATION"}
+        <Button 
+          size="lg" 
+          className="px-16 py-8 text-xl font-headline bg-black text-white hover:bg-black/80 rounded-none transition-all" 
+          onClick={handleStart} 
+          disabled={loading}
+        >
+          {loading ? "GENERATING WORLD..." : "INITIALIZE"}
         </Button>
       </div>
     );
   }
 
   return (
-    <div className="h-screen w-screen relative overflow-hidden flex font-body bg-[#0F1216]">
-      <main className="flex-1 relative">
-        <TacticalMap 
-          countries={world.countries} 
-          alliances={world.alliances}
-          selection={selection}
-          onSelectCountry={handleCountryClick}
-          onSelectSettlement={() => {}}
-        />
+    <div className="h-screen w-screen relative overflow-hidden flex font-body bg-[#F8FAFC]">
+      <main className="flex-1 relative flex flex-col">
+        <div className="flex-1 border-b border-black/5 bg-[#E5F1F5] flex items-center justify-center overflow-hidden">
+           <TacticalMap 
+            countries={world.countries} 
+            alliances={world.alliances}
+            selection={selection}
+            onSelectCountry={handleCountryClick}
+          />
+        </div>
 
         {/* Global HUD Controls */}
-        <div className="absolute top-6 left-6 flex flex-col gap-4">
-          <Card className="bg-black/60 backdrop-blur-md border-white/10 w-48 shadow-2xl">
-            <CardHeader className="p-4 pb-2">
-              <CardTitle className="text-[10px] uppercase tracking-widest text-accent font-headline">Main Command</CardTitle>
-            </CardHeader>
-            <CardContent className="p-2 pt-0 flex flex-col gap-1">
-              <Button 
-                variant={mode === 'battle-menu' || mode === 'battle-select' ? "default" : "ghost"} 
-                className={cn("justify-start gap-2 h-9 text-xs", (mode === 'battle-menu' || mode === 'battle-select') && "bg-accent text-background")}
-                onClick={() => { setMode('battle-menu'); setSelection([]); }}
-              >
-                <Swords className="h-4 w-4" /> BATTLE
-              </Button>
-              <Button 
-                variant={mode === 'war-menu' || mode === 'war-select' ? "default" : "ghost"} 
-                className={cn("justify-start gap-2 h-9 text-xs", (mode === 'war-menu' || mode === 'war-select') && "bg-accent text-background")}
-                onClick={() => { setMode('war-menu'); setSelection([]); }}
-              >
-                <Shield className="h-4 w-4" /> WAR
-              </Button>
-              <Button 
-                variant={mode === 'stats-panel' ? "default" : "ghost"} 
-                className={cn("justify-start gap-2 h-9 text-xs", mode === 'stats-panel' && "bg-accent text-background")}
-                onClick={() => { setMode(mode === 'stats-panel' ? 'none' : 'stats-panel'); }}
-              >
-                <ListOrdered className="h-4 w-4" /> STATS
-              </Button>
-            </CardContent>
-          </Card>
+        <div className="absolute top-6 left-6 flex flex-col gap-3">
+          <div className="bg-white/90 backdrop-blur-sm border border-black/10 p-1 flex flex-col shadow-sm">
+            <Button 
+              variant={mode === 'battle-menu' || mode === 'battle-select' ? "default" : "ghost"} 
+              className={cn("justify-start gap-3 h-10 text-[10px] uppercase font-bold rounded-none", (mode === 'battle-menu' || mode === 'battle-select') && "bg-black text-white")}
+              onClick={() => { setMode('battle-menu'); setSelection([]); }}
+            >
+              <Swords className="h-4 w-4" /> BATTLE
+            </Button>
+            <Button 
+              variant={mode === 'war-menu' || mode === 'war-select' ? "default" : "ghost"} 
+              className={cn("justify-start gap-3 h-10 text-[10px] uppercase font-bold rounded-none", (mode === 'war-menu' || mode === 'war-select') && "bg-black text-white")}
+              onClick={() => { setMode('war-menu'); setSelection([]); }}
+            >
+              <Shield className="h-4 w-4" /> WAR
+            </Button>
+            <Button 
+              variant={mode === 'stats-panel' ? "default" : "ghost"} 
+              className={cn("justify-start gap-3 h-10 text-[10px] uppercase font-bold rounded-none", mode === 'stats-panel' && "bg-black text-white")}
+              onClick={() => { setMode(mode === 'stats-panel' ? 'none' : 'stats-panel'); }}
+            >
+              <ListOrdered className="h-4 w-4" /> STATS
+            </Button>
+          </div>
 
-          {/* Contextual Menus */}
-          {mode === 'battle-menu' && (
-            <Card className="bg-black/80 backdrop-blur-md border-white/20 w-48 animate-in slide-in-from-left duration-200">
-               <CardHeader className="p-4 pb-2">
-                <CardTitle className="text-[10px] uppercase tracking-widest text-white">Battle Menu</CardTitle>
+          {/* Contextual Sub-Menus */}
+          {(mode === 'battle-menu' || mode === 'battle-select') && (
+            <Card className="bg-white border-black/10 rounded-none w-48 shadow-lg">
+              <CardHeader className="p-3 border-b border-black/5">
+                <CardTitle className="text-[10px] uppercase font-bold">Battle Command</CardTitle>
               </CardHeader>
-              <CardContent className="p-4 pt-0 space-y-2">
-                <Button size="sm" className="w-full h-8 text-[10px]" onClick={() => setMode('battle-select')}>
-                  SELECT COUNTRIES
-                </Button>
-                <Button variant="ghost" size="sm" className="w-full h-8 text-[10px] text-white/40" onClick={() => setMode('none')}>CANCEL</Button>
-              </CardContent>
-            </Card>
-          )}
-
-          {mode === 'battle-select' && (
-            <Card className="bg-accent/10 backdrop-blur-md border-accent/30 w-48 shadow-2xl">
-              <CardContent className="p-4 flex flex-col gap-3">
-                <p className="text-[10px] text-accent uppercase font-headline font-bold">Pick 2 Nations</p>
-                <div className="flex flex-wrap gap-1 min-h-[20px]">
-                  {selection.map(id => (
-                    <Badge key={id} variant="outline" className="text-[9px] bg-accent/20 border-accent/40">
-                      {world.countries.find(c => c.id === id)?.name || id}
-                    </Badge>
-                  ))}
-                </div>
-                <Button size="sm" className="w-full h-8 text-[10px] bg-accent text-background" disabled={selection.length !== 2} onClick={startBattle}>
-                  START BATTLE
-                </Button>
-                <Button variant="ghost" size="sm" className="w-full h-8 text-[10px] text-white/60" onClick={() => { setMode('battle-menu'); setSelection([]); }}>
-                  BACK
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-
-          {mode === 'war-menu' && (
-            <Card className="bg-black/80 backdrop-blur-md border-white/20 w-48 animate-in slide-in-from-left duration-200">
-              <CardHeader className="p-4 pb-2">
-                <CardTitle className="text-[10px] uppercase tracking-widest text-white">War Menu</CardTitle>
-              </CardHeader>
-              <CardContent className="p-4 pt-0 space-y-2">
+              <CardContent className="p-3 space-y-3">
+                <p className="text-[10px] text-muted-foreground leading-tight">Select two rival nations on the map to resolve border disputes.</p>
                 <div className="space-y-1">
-                  <p className="text-[8px] text-white/40 uppercase">Existing Alliances: {world.alliances.length}</p>
-                  {world.alliances.map((a, i) => (
-                    <Badge key={a.id} className="w-full justify-start text-[8px]" style={{ backgroundColor: a.color }}>{a.name}</Badge>
+                  {selection.map(id => (
+                    <div key={id} className="text-[9px] font-bold uppercase truncate border-l-2 border-black pl-2">
+                      {world.countries.find(c => c.id === id)?.name}
+                    </div>
                   ))}
                 </div>
-                <Button size="sm" className="w-full h-8 text-[10px]" onClick={() => setMode('war-select')}>
-                  {world.alliances.length < 4 ? "SELECT ALLIANCE" : "MAX ALLIANCES"}
-                </Button>
-                {world.alliances.length >= 2 && (
-                  <Button size="sm" variant="destructive" className="w-full h-8 text-[10px]" onClick={executeWar}>
-                    START GREAT WAR
-                  </Button>
+                {mode === 'battle-menu' ? (
+                   <Button size="sm" className="w-full h-8 text-[9px] uppercase font-bold bg-black text-white rounded-none" onClick={() => setMode('battle-select')}>
+                   SELECT TARGETS
+                 </Button>
+                ) : (
+                  <div className="flex flex-col gap-1">
+                    <Button size="sm" className="w-full h-8 text-[9px] uppercase font-bold bg-black text-white rounded-none" disabled={selection.length !== 2} onClick={startBattle}>
+                      EXECUTE BATTLE
+                    </Button>
+                    <Button variant="ghost" size="sm" className="w-full h-8 text-[9px] uppercase font-bold rounded-none" onClick={() => { setMode('battle-menu'); setSelection([]); }}>
+                      RESET
+                    </Button>
+                  </div>
                 )}
-                <Button variant="ghost" size="sm" className="w-full h-8 text-[10px] text-white/40" onClick={() => setMode('none')}>CANCEL</Button>
               </CardContent>
             </Card>
           )}
 
-          {mode === 'war-select' && (
-            <Card className="bg-accent/10 backdrop-blur-md border-accent/30 w-48 shadow-2xl">
-              <CardContent className="p-4 flex flex-col gap-3">
-                <p className="text-[10px] text-accent uppercase font-headline font-bold">Group Selection</p>
-                <div className="flex flex-wrap gap-1 min-h-[20px]">
-                  {selection.map(id => (
-                    <Badge key={id} variant="outline" className="text-[9px] bg-accent/20 border-accent/40">
-                      {world.countries.find(c => c.id === id)?.name || id}
-                    </Badge>
-                  ))}
+          {(mode === 'war-menu' || mode === 'war-select') && (
+            <Card className="bg-white border-black/10 rounded-none w-48 shadow-lg">
+              <CardHeader className="p-3 border-b border-black/5">
+                <CardTitle className="text-[10px] uppercase font-bold">Coalition Hub</CardTitle>
+              </CardHeader>
+              <CardContent className="p-3 space-y-3">
+                <div className="space-y-1">
+                   <p className="text-[9px] text-muted-foreground uppercase">Current Blocs: {world.alliances.length}</p>
+                   {world.alliances.map(a => (
+                     <div key={a.id} className="flex items-center gap-2">
+                        <div className="w-2 h-2" style={{ backgroundColor: a.color }} />
+                        <span className="text-[9px] font-bold truncate">{a.name}</span>
+                     </div>
+                   ))}
                 </div>
-                <Button size="sm" className="w-full h-8 text-[10px] bg-accent text-background" disabled={selection.length === 0} onClick={confirmAlliance}>
-                  OK (CONFIRM ALLIANCE)
-                </Button>
-                <Button variant="ghost" size="sm" className="w-full h-8 text-[10px] text-white/60" onClick={() => { setMode('war-menu'); setSelection([]); }}>
-                  BACK
-                </Button>
+                {mode === 'war-menu' ? (
+                  <div className="space-y-1">
+                    <Button size="sm" className="w-full h-8 text-[9px] uppercase font-bold bg-black text-white rounded-none" onClick={() => setMode('war-select')}>
+                      NEW ALLIANCE
+                    </Button>
+                    {world.alliances.length >= 2 && (
+                       <Button size="sm" variant="destructive" className="w-full h-8 text-[9px] uppercase font-bold rounded-none" onClick={executeWar}>
+                       START ALLIANCE WAR
+                     </Button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <p className="text-[9px] font-bold">Selected: {selection.length}</p>
+                    <Button size="sm" className="w-full h-8 text-[9px] uppercase font-bold bg-black text-white rounded-none" disabled={selection.length === 0} onClick={confirmAlliance}>
+                      CONFIRM BLOC
+                    </Button>
+                    <Button variant="ghost" size="sm" className="w-full h-8 text-[9px] uppercase font-bold rounded-none" onClick={() => { setMode('war-menu'); setSelection([]); }}>
+                      BACK
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
         </div>
 
-        {/* Status HUD */}
-        <div className="absolute top-6 right-6 flex items-center gap-3 bg-black/40 backdrop-blur-md border border-white/10 p-2 rounded-lg">
-          <Button size="icon" variant="ghost" className="h-8 w-8 text-white" onClick={() => setWorld(w => w ? {...w, isPaused: !w.isPaused} : null)}>
+        {/* Status Bar */}
+        <div className="absolute top-6 right-6 flex items-center gap-3 bg-white/90 backdrop-blur-sm border border-black/10 p-1 shadow-sm">
+          <Button size="icon" variant="ghost" className="h-8 w-8 rounded-none" onClick={() => setWorld(w => w ? {...w, isPaused: !w.isPaused} : null)}>
             {world.isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
           </Button>
-          <div className="w-px h-4 bg-white/10" />
-          <div className="px-3 flex flex-col items-center">
-             <span className="text-[9px] text-accent font-headline uppercase">Global Year</span>
-             <span className="text-xs text-white font-code">{world.gameYear}</span>
+          <div className="w-px h-4 bg-black/10" />
+          <div className="px-4 py-1 text-center min-w-[80px]">
+             <span className="text-[8px] text-muted-foreground uppercase block font-bold leading-none mb-1">Year</span>
+             <span className="text-xs font-bold leading-none">{world.gameYear}</span>
           </div>
-          <Button size="icon" variant="ghost" className="h-8 w-8 text-white hover:text-accent" onClick={initWorld}>
+          <div className="w-px h-4 bg-black/10" />
+          <Button size="icon" variant="ghost" className="h-8 w-8 rounded-none" onClick={initWorld}>
             <RotateCcw className="h-4 w-4" />
           </Button>
         </div>
       </main>
 
-      {/* Stats Rankings Overlay */}
+      {/* Rankings Side Panel */}
       {mode === 'stats-panel' && (
-        <aside className="w-[400px] h-full bg-card border-l border-white/10 flex flex-col z-50 shadow-2xl animate-in slide-in-from-right duration-300">
-          <div className="p-6 border-b border-white/5 flex items-center justify-between">
-            <h2 className="text-xl font-headline font-bold text-white uppercase tracking-tighter">Global Rankings</h2>
-            <Button size="icon" variant="ghost" onClick={() => setMode('none')}><X className="h-4 w-4" /></Button>
+        <aside className="w-[400px] h-full bg-white border-l border-black/10 flex flex-col z-50 shadow-2xl animate-in slide-in-from-right duration-300">
+          <div className="p-6 border-b border-black/5 flex items-center justify-between">
+            <h2 className="text-lg font-headline font-bold uppercase tracking-widest">Global Atlas Statistics</h2>
+            <Button size="icon" variant="ghost" onClick={() => setMode('none')} className="rounded-none"><X className="h-4 w-4" /></Button>
           </div>
-          <ScrollArea className="flex-1 p-6">
-            <div className="space-y-4">
-              {[...world.countries].sort((a,b) => (b.stats.economy) - (a.stats.economy)).map((c, idx) => (
-                <div key={c.id} className="p-4 bg-white/5 border border-white/5 rounded-lg space-y-3">
+          <ScrollArea className="flex-1">
+            <div className="divide-y divide-black/5">
+              {[...world.countries].sort((a,b) => b.stats.economy - a.stats.economy).map((c, idx) => (
+                <div key={c.id} className="p-6 space-y-4 hover:bg-black/[0.02] transition-colors">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <span className="text-xs font-code text-accent">#{idx + 1}</span>
-                      <h3 className="text-sm font-headline font-bold uppercase">{c.name}</h3>
-                    </div>
-                    {c.allianceId && (
-                      <Badge variant="outline" className="text-[8px] opacity-60">
-                        {world.alliances.find(a => a.id === c.allianceId)?.name}
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <span className="text-[9px] text-muted-foreground uppercase flex items-center gap-1"><TrendingUp className="h-2.5 w-2.5" /> Economy</span>
-                      <p className="text-xs font-code text-white">${c.stats.economy.toFixed(0)}B</p>
-                    </div>
-                    <div className="space-y-1">
-                      <span className="text-[9px] text-muted-foreground uppercase flex items-center gap-1"><Users className="h-2.5 w-2.5" /> Population</span>
-                      <p className="text-xs font-code text-white">{c.stats.population.toFixed(1)}M</p>
+                      <span className="text-xs font-bold opacity-30">#{idx + 1}</span>
+                      <div className="w-4 h-4" style={{ backgroundColor: c.color }} />
+                      <h3 className="text-sm font-bold uppercase">{c.name}</h3>
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/5">
-                    <div className="text-center">
-                      <span className="text-[8px] text-muted-foreground uppercase block">Ground</span>
-                      <span className="text-[10px] font-code text-green-400">{c.stats.military.ground.toFixed(0)}</span>
+                  <div className="grid grid-cols-2 gap-x-8 gap-y-4">
+                    <div className="space-y-1">
+                      <span className="text-[9px] text-muted-foreground uppercase font-bold flex items-center gap-1"><TrendingUp className="h-2.5 w-2.5" /> Economy</span>
+                      <p className="text-xs font-bold font-mono">${c.stats.economy.toFixed(1)}B</p>
                     </div>
-                    <div className="text-center">
-                      <span className="text-[8px] text-muted-foreground uppercase block">Air</span>
-                      <span className="text-[10px] font-code text-blue-400">{c.stats.military.air.toFixed(0)}</span>
+                    <div className="space-y-1">
+                      <span className="text-[9px] text-muted-foreground uppercase font-bold flex items-center gap-1"><Users className="h-2.5 w-2.5" /> Population</span>
+                      <p className="text-xs font-bold font-mono">{c.stats.population.toFixed(2)}M</p>
                     </div>
-                    <div className="text-center">
-                      <span className="text-[8px] text-muted-foreground uppercase block">Naval</span>
-                      <span className="text-[10px] font-code text-cyan-400">{c.stats.military.naval.toFixed(0)}</span>
+                  </div>
+                  <div className="flex gap-6 pt-2">
+                    <div>
+                      <span className="text-[8px] text-muted-foreground uppercase font-bold block mb-1">Ground</span>
+                      <span className="text-[10px] font-bold font-mono">{c.stats.military.ground.toFixed(0)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[8px] text-muted-foreground uppercase font-bold block mb-1">Air</span>
+                      <span className="text-[10px] font-bold font-mono">{c.stats.military.air.toFixed(0)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[8px] text-muted-foreground uppercase font-bold block mb-1">Naval</span>
+                      <span className="text-[10px] font-bold font-mono">{c.stats.military.naval.toFixed(0)}</span>
                     </div>
                   </div>
                 </div>

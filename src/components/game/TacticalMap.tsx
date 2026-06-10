@@ -1,15 +1,14 @@
 "use client";
 
 import React from 'react';
-import { Country, Alliance, Settlement } from '@/app/lib/game-logic';
-import { Building2, Landmark, ShieldAlert } from 'lucide-react';
+import { Country, Alliance, Settlement, Province } from '@/app/lib/game-logic';
+import { Landmark, Building2, ShieldAlert } from 'lucide-react';
 
 interface MapProps {
   countries: Country[];
   alliances: Alliance[];
   selection: string[];
   onSelectCountry: (c: Country) => void;
-  onSelectSettlement: (s: Settlement, c: Country) => void;
 }
 
 export const TacticalMap: React.FC<MapProps> = ({ 
@@ -28,90 +27,107 @@ export const TacticalMap: React.FC<MapProps> = ({
   };
 
   return (
-    <div className="relative w-full h-full map-container overflow-hidden select-none">
+    <div className="relative w-full h-full bg-[#E5F1F5] overflow-hidden select-none">
       <svg 
         viewBox="0 0 1000 1000" 
         className="w-full h-full"
         preserveAspectRatio="xMidYMid slice"
       >
         <defs>
-          {/* Gooey Filter for organic solid shapes */}
-          <filter id="goo">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="12" result="blur" />
-            <feColorMatrix 
-              in="blur" 
-              mode="matrix" 
-              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 25 -12" 
-              result="goo" 
-            />
-            <feComposite in="SourceGraphic" in2="goo" operator="atop" />
+          <filter id="shadow">
+            <feDropShadow dx="0" dy="1" stdDeviation="2" floodOpacity="0.1" />
           </filter>
-
-          {/* Map Paper Texture Overlay */}
-          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(0,0,0,0.05)" strokeWidth="1"/>
-          </pattern>
         </defs>
 
-        {/* Ocean Grid Background */}
-        <rect width="1000" height="1000" fill="url(#grid)" />
+        {/* Territory Polygons (Grid-based path rendering) */}
+        {countries.map(c => {
+          const color = getDisplayColor(c);
+          const isSelected = selection.includes(c.id);
+          
+          return (
+            <g key={c.id} className="cursor-pointer" onClick={() => onSelectCountry(c)}>
+              {/* Internal Provinces / Zones */}
+              {c.provinces.map((prov, pidx) => (
+                <g key={`${c.id}-prov-${pidx}`}>
+                  {prov.points.map((p, i) => (
+                    <rect 
+                      key={`${c.id}-p-${i}`} 
+                      x={p.x - 5} 
+                      y={p.y - 5} 
+                      width={10.5} 
+                      height={10.5} 
+                      fill={color} 
+                      className="transition-all duration-300"
+                    />
+                  ))}
+                  {/* Subtle province boundaries */}
+                  {prov.points.map((p, i) => (
+                    <rect 
+                      key={`${c.id}-pb-${i}`} 
+                      x={p.x - 5} 
+                      y={p.y - 5} 
+                      width={10.5} 
+                      height={10.5} 
+                      fill="none" 
+                      stroke="rgba(0,0,0,0.05)"
+                      strokeWidth="0.5"
+                    />
+                  ))}
+                </g>
+              ))}
 
-        {/* Territory Regions with Gooey Filter */}
-        <g className="gooey-filter">
-          {countries.map(c => {
-            const color = getDisplayColor(c);
-            const isSelected = selection.includes(c.id);
-            
-            return (
-              <g key={c.id} className="cursor-pointer" onClick={() => onSelectCountry(c)}>
+              {/* Main Country Outline */}
+              <g opacity={isSelected ? 1 : 0.8}>
                 {c.points.map((p, i) => (
-                  <circle 
-                    key={`${c.id}-p-${i}`} 
-                    cx={p.x} 
-                    cy={p.y} 
-                    r={26} 
-                    fill={color} 
-                    stroke={isSelected ? "#FFF" : "none"}
-                    strokeWidth={isSelected ? "2" : "0"}
-                    className="transition-all duration-500 ease-in-out"
+                  <rect 
+                    key={`${c.id}-outline-${i}`} 
+                    x={p.x - 5} 
+                    y={p.y - 5} 
+                    width={10.5} 
+                    height={10.5} 
+                    fill="none" 
+                    stroke="rgba(0,0,0,0.2)"
+                    strokeWidth="0.3"
                   />
                 ))}
               </g>
-            );
-          })}
-        </g>
+            </g>
+          );
+        })}
 
-        {/* Sharp Borders (Black Outline Layer) */}
-        <g opacity="0.4">
-          {countries.map(c => {
-             const isSelected = selection.includes(c.id);
-             return (
-               <g key={`${c.id}-border`} className="pointer-events-none">
-                 {c.points.map((p, i) => (
-                   <circle 
-                     key={`${c.id}-bp-${i}`} 
-                     cx={p.x} 
-                     cy={p.y} 
-                     r={27} 
-                     fill="none" 
-                     stroke="rgba(0,0,0,0.8)" 
-                     strokeWidth="0.5"
-                   />
-                 ))}
-               </g>
-             );
-          })}
-        </g>
+        {/* Crisp Selection Outline */}
+        {selection.map(id => {
+          const c = countries.find(curr => curr.id === id);
+          if (!c) return null;
+          return (
+            <g key={`selection-${id}`} className="pointer-events-none">
+              {c.points.map((p, i) => (
+                <rect 
+                  key={`sel-p-${i}`} 
+                  x={p.x - 6} 
+                  y={p.y - 6} 
+                  width={12} 
+                  height={12} 
+                  fill="none" 
+                  stroke="white" 
+                  strokeWidth="2"
+                  strokeOpacity="0.5"
+                />
+              ))}
+            </g>
+          );
+        })}
 
         {/* Labels & Landmarks */}
         {countries.map(c => (
           <React.Fragment key={`${c.id}-entities`}>
-            {/* Country Name */}
+            {/* Country Name Label */}
             <text 
               x={c.center.x} 
-              y={c.center.y + 40} 
+              y={c.center.y} 
               textAnchor="middle" 
-              className="country-label select-none pointer-events-none text-[12px]"
+              className="pointer-events-none uppercase font-headline font-bold text-[10px] tracking-widest fill-black/60 filter drop-shadow-sm"
+              style={{ textShadow: '0 0 3px rgba(255,255,255,0.8)' }}
             >
               {c.name}
             </text>
@@ -122,19 +138,19 @@ export const TacticalMap: React.FC<MapProps> = ({
                 <circle 
                   cx={s.coords.x} 
                   cy={s.coords.y} 
-                  r={12} 
+                  r={8} 
                   fill="white"
                   stroke="black"
                   strokeWidth="1.5"
-                  className="shadow-xl"
+                  filter="url(#shadow)"
                 />
-                <g transform={`translate(${s.coords.x - 7}, ${s.coords.y - 7})`}>
+                <g transform={`translate(${s.coords.x - 5}, ${s.coords.y - 5})`}>
                   {s.type === 'capital' ? (
-                    <Landmark size={14} className="text-primary" />
+                    <Landmark size={10} className="text-black" />
                   ) : s.type === 'city' ? (
-                    <Building2 size={12} className="text-slate-700" />
+                    <Building2 size={8} className="text-black/60" />
                   ) : (
-                    <ShieldAlert size={12} className="text-destructive" />
+                    <ShieldAlert size={8} className="text-destructive" />
                   )}
                 </g>
               </g>
