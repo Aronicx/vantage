@@ -94,7 +94,6 @@ export async function generateNewWorld(width: number, height: number): Promise<G
   const landCenterCount = 6 + Math.floor(Math.random() * 4);
   const padding = width * 0.15;
   
-  // Confine generation to central area to prevent cut-off
   for(let i = 0; i < landCenterCount; i++) {
     landCenters.push({
       p: {
@@ -177,7 +176,6 @@ export async function generateNewWorld(width: number, height: number): Promise<G
   const finalCountries = countries.filter(c => c.points.length > 5);
 
   finalCountries.forEach(c => {
-    // Check if landlocked
     let isLandlocked = true;
     for (const p of c.points) {
       const neighbors = [
@@ -193,24 +191,23 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     }
     c.stats.isLandlocked = isLandlocked;
 
-    const sizeFactor = c.points.length / 50; // Reference size
-    const isPowerhouse = Math.random() > 0.92;
-    const luckMultiplier = isPowerhouse ? (1.4 + Math.random() * 0.6) : (0.9 + Math.random() * 0.2);
+    const sizeFactor = c.points.length / 50; 
+    // Luck multiplier allows smaller nations to be "punching above their weight"
+    const isPowerhouse = Math.random() > 0.90;
+    const luckMultiplier = isPowerhouse ? (1.5 + Math.random() * 0.8) : (0.85 + Math.random() * 0.4);
     
-    // Geopolitical modifiers
-    const geoEconBonus = isLandlocked ? 0.85 : 1.15;
-    const geoMilitaryPenalty = isLandlocked ? 0.9 : 1.0;
+    const geoEconBonus = isLandlocked ? 0.90 : 1.10; // Softened penalties
 
-    c.stats.economy = (100 + sizeFactor * 500) * luckMultiplier * geoEconBonus;
-    c.stats.population = (5 + sizeFactor * 40) * luckMultiplier;
+    c.stats.economy = (100 + sizeFactor * 400) * luckMultiplier * geoEconBonus;
+    c.stats.population = (5 + sizeFactor * 30) * luckMultiplier;
     c.stats.military = {
-      ground: (40 + sizeFactor * 100) * luckMultiplier * geoMilitaryPenalty,
-      air: (10 + sizeFactor * 40) * luckMultiplier * geoMilitaryPenalty,
-      naval: isLandlocked ? (sizeFactor * 5) : (10 + sizeFactor * 40) * luckMultiplier,
+      ground: (40 + sizeFactor * 80) * luckMultiplier,
+      air: (10 + sizeFactor * 30) * luckMultiplier,
+      naval: isLandlocked ? (sizeFactor * 2) : (10 + sizeFactor * 40) * luckMultiplier,
     };
 
-    // Growth rates: Coastal nations grow faster
-    c.stats.growthRate = (isLandlocked ? 1.008 : 1.018) + (Math.random() * 0.005);
+    // Growth rates are slightly variable so anyone can become a superpower over centuries
+    c.stats.growthRate = (isLandlocked ? 1.009 : 1.015) + (Math.random() * 0.01);
 
     const provinceCount = Math.max(2, Math.floor(c.points.length / 30));
     const provinceSeeds: Point[] = [];
@@ -264,20 +261,20 @@ export function processTick(state: GameState): GameState {
 
   const updatedCountries = state.countries.map(c => {
     const stats = { ...c.stats };
-    let currentGrowth = stats.growthRate;
+    // Add a small random element to growth each year so it's not perfectly linear
+    const annualVariance = 0.998 + (Math.random() * 0.004);
+    let currentGrowth = stats.growthRate * annualVariance;
 
-    // Apply temporary buffs/debuffs
     if (c.recoveryEndYear && state.gameYear <= c.recoveryEndYear) {
-      currentGrowth = 1 + (stats.growthRate - 1) * 0.4;
+      currentGrowth = 1 + (stats.growthRate - 1) * 0.45;
     } else if (c.boomEndYear && state.gameYear <= c.boomEndYear) {
-      currentGrowth = 1 + (stats.growthRate - 1) * 1.6;
+      currentGrowth = 1 + (stats.growthRate - 1) * 1.5;
     }
 
     stats.population *= currentGrowth;
     stats.economy *= currentGrowth;
     
-    // Military grows with economy but slower
-    const milGrowth = 1 + (currentGrowth - 1) * 0.5;
+    const milGrowth = 1 + (currentGrowth - 1) * 0.6;
     stats.military.ground *= milGrowth;
     stats.military.air *= milGrowth;
     stats.military.naval *= milGrowth;
@@ -298,9 +295,8 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   let ratio: number;
 
   const calculatePower = (c: Country) => {
-    // Military stats + economic support
-    let p = c.stats.military.ground + c.stats.military.air + (c.stats.military.naval * 0.7);
-    p += c.stats.economy * 0.1; // Economy supports logistics
+    let p = c.stats.military.ground + c.stats.military.air + (c.stats.military.naval * 0.65);
+    p += c.stats.economy * 0.12; 
     return p;
   };
 
@@ -313,58 +309,53 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   } else {
     const power1 = calculatePower(c1);
     const power2 = calculatePower(c2);
-    const variability = 0.85 + Math.random() * 0.3;
-    const power1Adjusted = power1 * variability;
+    // Variability factor (0.85 to 1.15) allows for upsets
+    const variability1 = 0.85 + Math.random() * 0.3;
+    const power1Adjusted = power1 * variability1;
     winner = power1Adjusted > power2 ? c1 : c2;
     loser = power1Adjusted > power2 ? c2 : c1;
     ratio = Math.max(power1, power2) / Math.min(power1, power2);
   }
 
   const isLoserVulnerable = loser.recoveryEndYear && state.gameYear <= loser.recoveryEndYear;
-  const winnerAttrition = 0.06 + (Math.random() * 0.06);
+  const winnerAttrition = 0.05 + (Math.random() * 0.05);
   const loserAttrition = isLoserVulnerable 
-    ? 0.40 + (Math.random() * 0.20) 
-    : 0.22 + (Math.random() * 0.12);
+    ? 0.40 + (Math.random() * 0.15) 
+    : 0.20 + (Math.random() * 0.10);
 
   const originalLoserEconomy = loser.stats.economy;
   const originalLoserPopulation = loser.stats.population;
   const originalLoserMilitary = { ...loser.stats.military };
 
-  // Apply losses to winner
   winner.stats.economy *= (1 - winnerAttrition);
-  winner.stats.population *= (1 - winnerAttrition * 0.4);
-  winner.stats.military.ground *= (1 - winnerAttrition * 1.6);
-  winner.stats.military.air *= (1 - winnerAttrition * 1.6);
-  winner.stats.military.naval *= (1 - winnerAttrition * 1.3);
+  winner.stats.population *= (1 - winnerAttrition * 0.3);
+  winner.stats.military.ground *= (1 - winnerAttrition * 1.4);
+  winner.stats.military.air *= (1 - winnerAttrition * 1.4);
+  winner.stats.military.naval *= (1 - winnerAttrition * 1.2);
 
-  // Apply losses to loser
   loser.stats.economy *= (1 - loserAttrition);
-  loser.stats.population *= (1 - loserAttrition * 0.8);
-  loser.stats.military.ground *= (1 - loserAttrition * 2.2);
-  loser.stats.military.air *= (1 - loserAttrition * 2.2);
-  loser.stats.military.naval *= (1 - loserAttrition * 2.0);
+  loser.stats.population *= (1 - loserAttrition * 0.7);
+  loser.stats.military.ground *= (1 - loserAttrition * 2.0);
+  loser.stats.military.air *= (1 - loserAttrition * 2.0);
+  loser.stats.military.naval *= (1 - loserAttrition * 1.8);
 
-  // Transfer Spoils
-  const lootFactor = 0.45;
+  const lootFactor = 0.40;
   winner.stats.economy += (originalLoserEconomy - loser.stats.economy) * lootFactor;
   winner.stats.population += (originalLoserPopulation - loser.stats.population) * lootFactor;
-  winner.stats.military.ground += (originalLoserMilitary.ground - loser.stats.military.ground) * lootFactor * 0.4;
-  winner.stats.military.air += (originalLoserMilitary.air - loser.stats.military.air) * lootFactor * 0.4;
-  winner.stats.military.naval += (originalLoserMilitary.naval - loser.stats.military.naval) * lootFactor * 0.4;
+  
+  winner.recoveryEndYear = state.gameYear + 4;
+  winner.boomEndYear = state.gameYear + 12;
+  loser.recoveryEndYear = state.gameYear + 8; 
 
-  winner.recoveryEndYear = state.gameYear + 5;
-  winner.boomEndYear = state.gameYear + 15;
-  loser.recoveryEndYear = state.gameYear + 10; 
-
-  let lossPercent = 0.18;
-  let resultText = 'Minor border adjustment.';
+  let lossPercent = 0.15;
+  let resultText = 'Localized border conflict resolved.';
 
   if (isLoserVulnerable) {
-    lossPercent = 0.65 + Math.random() * 0.3;
-    resultText = `${loser.name}'s defenses collapsed! Massive territorial collapse.`;
+    lossPercent = 0.60 + Math.random() * 0.3;
+    resultText = `${loser.name}'s fragile administration collapsed under pressure!`;
   } else {
-    if (ratio > 1.8) { lossPercent = 0.35; resultText = 'Strategic breakthrough.'; }
-    if (ratio > 3.0) { lossPercent = 0.55; resultText = 'Total victory on the front lines.'; }
+    if (ratio > 1.7) { lossPercent = 0.30; resultText = 'Significant territorial gains for the victor.'; }
+    if (ratio > 2.8) { lossPercent = 0.50; resultText = 'Overwhelming tactical superiority achieved.'; }
   }
 
   const pointsToTransferCount = Math.floor(loser.points.length * lossPercent);
@@ -380,9 +371,8 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   let nextCountries = [...state.countries];
 
   if (isCapitalCaptured) {
-    resultText += ` ${loser.name}'s capital fell.`;
+    resultText += ` ${loser.name}'s capital was occupied.`;
     if (loser.points.length > 5) {
-      resultText += ` A rump state emerged from the remnants.`;
       const newCountryId = `country-rump-${Date.now()}`;
       const avgX = loser.points.reduce((s, p) => s + p.x, 0) / loser.points.length;
       const avgY = loser.points.reduce((s, p) => s + p.y, 0) / loser.points.length;
@@ -393,31 +383,30 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
         id: newCountryId,
         name: `Free ${loser.name}`,
         center: newCenter,
-        settlements: [{ id: `${newCountryId}-cap`, name: `New Capital`, type: 'capital', coords: newCenter, ownerId: newCountryId }],
+        settlements: [{ id: `${newCountryId}-cap`, name: `Regency Capital`, type: 'capital', coords: newCenter, ownerId: newCountryId }],
         allianceId: undefined,
         stats: {
            ...loser.stats,
-           economy: loser.stats.economy * 0.3,
-           population: loser.stats.population * 0.4,
+           economy: loser.stats.economy * 0.35,
+           population: loser.stats.population * 0.45,
            military: {
-             ground: loser.stats.military.ground * 0.15,
-             air: loser.stats.military.air * 0.15,
-             naval: loser.stats.military.naval * 0.1
+             ground: loser.stats.military.ground * 0.2,
+             air: loser.stats.military.air * 0.2,
+             naval: loser.stats.military.naval * 0.15
            }
         },
-        recoveryEndYear: state.gameYear + 15
+        recoveryEndYear: state.gameYear + 12
       };
       nextCountries = nextCountries.filter(c => c.id !== loser.id).concat(newCountry);
     } else {
-      resultText = `${loser.name} was fully annexed.`;
+      resultText = `${loser.name} has been annexed into ${winner.name}.`;
       nextCountries = nextCountries.filter(c => c.id !== loser.id);
     }
   } else if (loser.points.length <= 2) {
-    resultText = `${loser.name} ceased to exist as a sovereign entity.`;
+    resultText = `${loser.name} was dissolved.`;
     nextCountries = nextCountries.filter(c => c.id !== loser.id);
   }
 
-  // Regenerate provinces for involved parties
   nextCountries = nextCountries.map(country => {
     if (country.id === winner.id || (isCapitalCaptured && country.id.startsWith('country-rump-'))) {
        const provinceCount = Math.max(2, Math.floor(country.points.length / 40));
@@ -463,7 +452,7 @@ export function executeAllianceWar(state: GameState): GameState {
       }
     });
 
-    const power = combinedGround + combinedAir + (combinedNaval * 0.7) + (combinedEconomy * 0.15) + (combinedPopulation * 0.05);
+    const power = combinedGround + combinedAir + (combinedNaval * 0.65) + (combinedEconomy * 0.15) + (combinedPopulation * 0.05);
     return { id: a.id, power, countryIds: a.countryIds };
   });
 
@@ -487,7 +476,7 @@ export function executeAllianceWar(state: GameState): GameState {
       const receiverCid = winnerRef.countryIds[Math.floor(Math.random() * winnerRef.countryIds.length)];
       
       const isLoserVulnerable = loserC.recoveryEndYear && nextState.gameYear <= loserC.recoveryEndYear;
-      const loserAttrition = isLoserVulnerable ? 0.45 : 0.3;
+      const loserAttrition = isLoserVulnerable ? 0.40 : 0.25;
 
       totalLootedEconomy += loserC.stats.economy * loserAttrition * 0.5;
       totalLootedPopulation += loserC.stats.population * loserAttrition * 0.5;
@@ -539,7 +528,7 @@ export function createAlliance(state: GameState, countryIds: string[]): GameStat
   
   const alliance: Alliance = {
     id: `alliance-${state.alliances.length}-${Date.now()}`,
-    name: `${leader?.name || 'Grand'} Bloc`,
+    name: `${leader?.name || 'Grand'} Coalition`,
     color: color,
     countryIds: [...countryIds]
   };
