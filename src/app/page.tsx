@@ -42,7 +42,8 @@ export default function VantagePoint() {
 
   useEffect(() => {
     if (world?.gameStarted && !world.isPaused) {
-      const interval = 3000 / (world.simulationSpeed || 1);
+      // Scale: 1 year = 30 real-world seconds (30000ms)
+      const interval = 30000 / (world.simulationSpeed || 1);
       timerRef.current = setInterval(() => {
         setWorld(prev => prev ? processTick(prev) : null);
       }, interval);
