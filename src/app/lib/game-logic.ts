@@ -109,7 +109,8 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     });
   }
 
-  const gridSize = 10;
+  // Reduced Grid Size for smoother, high-res borders
+  const gridSize = 5;
   const landPoints: Point[] = [];
   const landPointSet = new Set<string>();
 
@@ -178,7 +179,7 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     }
   });
 
-  const finalCountries = countries.filter(c => c.points.length > 5);
+  const finalCountries = countries.filter(c => c.points.length > 20); // Adjusted threshold for higher resolution
 
   finalCountries.forEach(c => {
     // Geography Detection
@@ -197,7 +198,7 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     }
     c.stats.isLandlocked = isLandlocked;
 
-    const sizeFactor = c.points.length / 50; 
+    const sizeFactor = c.points.length / 200; // Adjusted for higher point density
     const isPowerhouse = Math.random() > 0.90;
     const luckMultiplier = isPowerhouse ? (1.5 + Math.random() * 0.8) : (0.85 + Math.random() * 0.4);
     
@@ -214,7 +215,7 @@ export async function generateNewWorld(width: number, height: number): Promise<G
 
     c.stats.growthRate = (isLandlocked ? 1.008 : 1.014) + (Math.random() * 0.008);
 
-    const provinceCount = Math.max(2, Math.floor(c.points.length / 30));
+    const provinceCount = Math.max(2, Math.floor(c.points.length / 120));
     const provinceSeeds: Point[] = [];
     for(let i=0; i<provinceCount; i++) {
       provinceSeeds.push(c.points[Math.floor(Math.random() * c.points.length)]);
@@ -382,7 +383,7 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
 
   if (isCapitalCaptured) {
     resultText += ` The fall of the capital of ${loser.name} has paralyzed the nation.`;
-    if (loser.points.length > 5) {
+    if (loser.points.length > 20) {
       const newCountryId = `country-rump-${Date.now()}`;
       const avgX = loser.points.reduce((s, p) => s + p.x, 0) / loser.points.length;
       const avgY = loser.points.reduce((s, p) => s + p.y, 0) / loser.points.length;
@@ -407,14 +408,14 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
       resultText = `${loser.name} has been fully annexed by ${winner.name}.`;
       nextCountries = nextCountries.filter(c => c.id !== loser.id);
     }
-  } else if (loser.points.length <= 2) {
+  } else if (loser.points.length <= 5) {
     resultText = `${loser.name} has effectively ceased to exist as a sovereign state.`;
     nextCountries = nextCountries.filter(c => c.id !== loser.id);
   }
 
   nextCountries = nextCountries.map(country => {
     if (country.id === winner.id || country.id.startsWith('country-rump-')) {
-       const provinceCount = Math.max(2, Math.floor(country.points.length / 40));
+       const provinceCount = Math.max(2, Math.floor(country.points.length / 160));
        const provinceSeeds: Point[] = [];
        for(let i=0; i<provinceCount; i++) {
          provinceSeeds.push(country.points[Math.floor(Math.random() * country.points.length)]);
@@ -468,7 +469,7 @@ export function mergeCountries(state: GameState, ids: string[], customName: stri
   const avgY = allPoints.reduce((s, p) => s + p.y, 0) / allPoints.length;
   const mergedCenter = { x: avgX, y: avgY };
 
-  const provinceCount = Math.max(2, Math.floor(allPoints.length / 40));
+  const provinceCount = Math.max(2, Math.floor(allPoints.length / 160));
   const provinceSeeds: Point[] = [];
   for(let i = 0; i < provinceCount; i++) {
     provinceSeeds.push(allPoints[Math.floor(Math.random() * allPoints.length)]);
@@ -525,7 +526,7 @@ export function mergeCountries(state: GameState, ids: string[], customName: stri
 
 export function splitCountry(state: GameState, targetId: string, parts: number, successorNames: string[]): GameState {
   const target = state.countries.find(c => c.id === targetId);
-  if (!target || parts < 2 || target.points.length < parts * 5) return state;
+  if (!target || parts < 2 || target.points.length < parts * 20) return state;
 
   const seeds: Point[] = [];
   const sourcePoints = [...target.points];
@@ -564,7 +565,7 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
 
   for (let i = 0; i < parts; i++) {
     const points = partitionedPoints[i];
-    if (points.length < 2) continue; // Skip empty partitions
+    if (points.length < 5) continue; // Skip empty partitions
     
     const id = `split-${target.id}-${i}-${Date.now()}`;
     const avgX = points.reduce((s, p) => s + p.x, 0) / points.length;
@@ -603,7 +604,7 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
     };
 
     // Recalculate internal provinces for splinter
-    const pCount = Math.max(1, Math.floor(country.points.length / 30));
+    const pCount = Math.max(1, Math.floor(country.points.length / 120));
     const pSeeds: Point[] = [];
     for(let j=0; j<pCount; j++) pSeeds.push(country.points[Math.floor(Math.random() * country.points.length)]);
     country.provinces = pSeeds.map((s, idx) => ({ id: `${id}-p-${idx}`, points: [], center: s }));

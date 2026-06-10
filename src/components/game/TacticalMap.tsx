@@ -25,16 +25,16 @@ export const TacticalMap: React.FC<MapProps> = ({
         preserveAspectRatio="xMidYMid meet"
       >
         <defs>
-          {/* Main Geo Filter: Crisp Black Outlines for territory masses */}
+          {/* Natural Organic Outline Filter (Gooey effect for smoother borders) */}
           <filter id="crisp-geo">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="blur" />
+            <feGaussianBlur in="SourceGraphic" stdDeviation="4.0" result="blur" />
             <feColorMatrix 
               in="blur" 
               mode="matrix" 
               values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 50 -15" 
               result="crisp" 
             />
-            <feMorphology in="crisp" operator="dilate" radius="2" result="dilated" />
+            <feMorphology in="crisp" operator="dilate" radius="2.5" result="dilated" />
             <feComposite in="dilated" in2="crisp" operator="out" result="outline" />
             <feFlood floodColor="#000000" result="black" />
             <feComposite in="black" in2="outline" operator="in" result="blackOutline" />
@@ -45,16 +45,16 @@ export const TacticalMap: React.FC<MapProps> = ({
             </feMerge>
           </filter>
 
-          {/* Internal Borders Filter: Subtle Grey lines between members */}
+          {/* Internal Administrative Filter (Gooey smoothed internal borders) */}
           <filter id="crisp-geo-grey">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" />
+            <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="blur" />
             <feColorMatrix 
               in="blur" 
               mode="matrix" 
-              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 40 -12" 
+              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 45 -13" 
               result="crisp" 
             />
-            <feMorphology in="crisp" operator="dilate" radius="1.2" result="dilated" />
+            <feMorphology in="crisp" operator="dilate" radius="1.8" result="dilated" />
             <feComposite in="dilated" in2="crisp" operator="out" result="outline" />
             <feFlood floodColor="#475569" result="grey" />
             <feComposite in="grey" in2="outline" operator="in" result="greyOutline" />
@@ -65,7 +65,6 @@ export const TacticalMap: React.FC<MapProps> = ({
             </feMerge>
           </filter>
           
-          {/* High Contrast Label Background Filter */}
           <filter id="label-buffer">
             <feGaussianBlur in="SourceAlpha" stdDeviation="2.5" result="blur" />
             <feFlood floodColor="white" result="flood" />
@@ -85,10 +84,10 @@ export const TacticalMap: React.FC<MapProps> = ({
                 {c.points.map((p, i) => (
                   <rect 
                     key={`${c.id}-p-int-${i}`} 
-                    x={p.x - 5.5} 
-                    y={p.y - 5.5} 
-                    width={11.5} 
-                    height={11.5} 
+                    x={p.x - 2.8} 
+                    y={p.y - 2.8} 
+                    width={5.6} 
+                    height={5.6} 
                     fill={alliance.color} 
                   />
                 ))}
@@ -98,16 +97,15 @@ export const TacticalMap: React.FC<MapProps> = ({
         ))}
 
         {/* 2. Outer Black Borders Layer (Independent Countries) */}
-        {/* We map individually so each country gets its own outline even if neighbors */}
         {countries.filter(c => !c.allianceId).map(c => (
           <g key={`${c.id}-outer`} filter="url(#crisp-geo)" className="cursor-pointer" onClick={() => onSelectCountry(c)}>
             {c.points.map((p, i) => (
               <rect 
                 key={`${c.id}-p-${i}`} 
-                x={p.x - 5.5} 
-                y={p.y - 5.5} 
-                width={11.5} 
-                height={11.5} 
+                x={p.x - 2.8} 
+                y={p.y - 2.8} 
+                width={5.6} 
+                height={5.6} 
                 fill={c.color} 
               />
             ))}
@@ -122,10 +120,10 @@ export const TacticalMap: React.FC<MapProps> = ({
                 {c.points.map((p, i) => (
                   <rect 
                     key={`${c.id}-p-ext-${i}`} 
-                    x={p.x - 5.5} 
-                    y={p.y - 5.5} 
-                    width={11.5} 
-                    height={11.5} 
+                    x={p.x - 2.8} 
+                    y={p.y - 2.8} 
+                    width={5.6} 
+                    height={5.6} 
                     fill={alliance.color} 
                   />
                 ))}
@@ -143,28 +141,27 @@ export const TacticalMap: React.FC<MapProps> = ({
               {c.points.map((p, i) => (
                 <rect 
                   key={`sel-p-${i}`} 
-                  x={p.x - 6.5} 
-                  y={p.y - 6.5} 
-                  width={13} 
-                  height={13} 
+                  x={p.x - 3.2} 
+                  y={p.y - 3.2} 
+                  width={6.4} 
+                  height={6.4} 
                   fill="white" 
                   fillOpacity="0.3"
                   stroke="white" 
-                  strokeWidth="3"
+                  strokeWidth="1.5"
                 />
               ))}
             </g>
           );
         })}
 
-        {/* 5. Labels & Markers (Topmost layer with Buffer) */}
+        {/* 5. Labels & Markers */}
         {countries.map(c => {
           const capital = c.settlements.find(s => s.type === 'capital');
           if (!capital) return null;
 
           return (
             <g key={`${c.id}-labels`} className="pointer-events-none">
-              {/* Capital Marker */}
               <circle 
                 cx={capital.coords.x} 
                 cy={capital.coords.y} 
@@ -174,7 +171,6 @@ export const TacticalMap: React.FC<MapProps> = ({
                 strokeWidth="1.5"
                 filter="drop-shadow(0px 1px 2px rgba(0,0,0,0.3))"
               />
-              {/* Country Name with Buffer Glow */}
               <text 
                 x={capital.coords.x} 
                 y={capital.coords.y - 14} 
