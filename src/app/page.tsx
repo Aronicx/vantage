@@ -22,7 +22,8 @@ import {
   Swords,
   Handshake,
   UserCheck,
-  EyeOff
+  EyeOff,
+  Skull
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -52,12 +53,26 @@ export default function VantagePoint() {
   }, []);
 
   useEffect(() => {
-    if (world && !timerRef.current) {
+    if (world && !timerRef.current && !world.isPaused) {
       timerRef.current = setInterval(() => {
         setWorld(prev => prev ? processTick(prev) : null);
       }, 3000); 
+    } else if (world?.isPaused && timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
     }
-  }, [world]);
+  }, [world?.isPaused, world === null]);
+
+  // Part 6: Handle deselection if a country is conquered
+  useEffect(() => {
+    if (world && selectedCountryId) {
+      const exists = world.countries.some(c => c.id === selectedCountryId);
+      if (!exists) {
+        setSelectedCountryId(null);
+        setSelectedSettlement(null);
+      }
+    }
+  }, [world, selectedCountryId]);
 
   const initNewGame = async () => {
     setLoading(true);
@@ -273,6 +288,13 @@ export default function VantagePoint() {
                           </div>
                         );
                       })}
+                      {world?.countries.length === 1 && (
+                        <div className="flex flex-col items-center justify-center p-6 text-center space-y-2">
+                          <Skull className="h-8 w-8 text-red-500 animate-pulse" />
+                          <p className="text-xs text-white uppercase font-headline">Global Hegemony Achieved</p>
+                          <p className="text-[10px] text-muted-foreground">All rival states have been annexed.</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </TabsContent>

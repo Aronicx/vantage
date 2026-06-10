@@ -269,7 +269,6 @@ export function processTick(state: GameState): GameState {
   // 2. War Phase (Alliance-Aware Territory Conquest)
   const warRelations = state.relations.filter(r => r.type === 'war');
   if (warRelations.length > 0) {
-    // Process each unique pair of warring coalitions
     const processedWars = new Set<string>();
 
     warRelations.forEach(war => {
@@ -281,7 +280,6 @@ export function processTick(state: GameState): GameState {
       const coalition1 = getCoalition(id1, state.relations);
       const coalition2 = getCoalition(id2, state.relations);
 
-      // Power Calculation for the entire Alliance
       const calcPower = (ids: string[]) => {
         return ids.reduce((total, id) => {
           const c = updatedCountries.find(curr => curr.id === id);
@@ -299,12 +297,10 @@ export function processTick(state: GameState): GameState {
       const powerDiff = Math.abs(power1 - power2);
       const flipTotal = Math.max(1, Math.floor(powerDiff / 25));
 
-      // Attempt to flip points for each loser in the alliance
       loserIds.forEach(lId => {
         const loser = updatedCountries.find(c => c.id === lId);
         if (!loser || loser.points.length === 0) return;
 
-        // The loser might lose territory to any winner adjacent to them
         const borderPointsIndices: number[] = [];
         const thresholdDist = 45;
 
@@ -319,8 +315,6 @@ export function processTick(state: GameState): GameState {
           }
         });
 
-        // Slice how many points this specific country loses this tick
-        // (Distributed roughly by power imbalance)
         const countryFlipCount = Math.min(borderPointsIndices.length, Math.ceil(flipTotal / loserIds.length));
         const toFlip = borderPointsIndices
           .sort(() => Math.random() - 0.5)
@@ -330,7 +324,6 @@ export function processTick(state: GameState): GameState {
           const pointsToMove = toFlip.map(idx => loser.points[idx]);
           loser.points = loser.points.filter((_, idx) => !toFlip.includes(idx));
 
-          // Give these points to the closest winner in the coalition
           pointsToMove.forEach(pt => {
             let closestWinner: Country | null = null;
             let minDist = Infinity;
@@ -353,13 +346,11 @@ export function processTick(state: GameState): GameState {
       });
     });
 
-    // Check for settlement capture based on updated borders
+    // Settlement Capture based on updated borders
     updatedCountries.forEach(country => {
       country.settlements.forEach(s => {
-        // Find if the current owner's territory still covers the settlement
-        // Or if an enemy's territory now covers it
         let bestClaimId = s.ownerId;
-        let minClaimDist = 20; // Proximity threshold
+        let minClaimDist = 20;
 
         updatedCountries.forEach(c => {
           const distToTerritory = c.points.reduce((min, p) => Math.min(min, getDistance(p, s.coords)), Infinity);
@@ -376,10 +367,44 @@ export function processTick(state: GameState): GameState {
     });
   }
 
+  // 3. Part 6: Cleanup Conquered Nations (Territory Elimination)
+  const conqueredIds = updatedCountries.filter(c => c.points.length === 0).map(c => c.id);
+  let updatedRelations = state.relations;
+
+  if (conqueredIds.length > 0) {
+    // Remove the countries that have lost all land
+    updatedCountries = updatedCountries.filter(c => !conqueredIds.includes(c.id));
+    
+    // Purge diplomatic relations involving defunct nations
+    updatedRelations = state.relations.filter(r => 
+      !r.participants.some(pId => conqueredIds.includes(pId))
+    );
+
+    // Any settlements owned by defunct countries should be assigned to the current territorial holder
+    updatedCountries.forEach(c => {
+      c.settlements.forEach(s => {
+        if (conqueredIds.includes(s.ownerId)) {
+          // Find the new owner of this spot on the map
+          let actualOwnerId = c.id;
+          let minD = Infinity;
+          updatedCountries.forEach(oc => {
+            const d = oc.points.reduce((m, p) => Math.min(m, getDistance(p, s.coords)), Infinity);
+            if (d < minD) {
+              minD = d;
+              actualOwnerId = oc.id;
+            }
+          });
+          s.ownerId = actualOwnerId;
+        }
+      });
+    });
+  }
+
   return {
     ...state,
     countries: updatedCountries,
-    gameYear: state.gameYear + 1
+    gameYear: state.gameYear + 1,
+    relations: updatedRelations
   };
 }
 
