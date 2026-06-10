@@ -31,7 +31,7 @@ export const TacticalMap: React.FC<MapProps> = ({
       <svg 
         viewBox="0 0 1000 1000" 
         className="w-full h-full"
-        preserveAspectRatio="xMidYMid slice"
+        preserveAspectRatio="xMidYMid meet"
       >
         <defs>
           <filter id="shadow">
@@ -39,14 +39,14 @@ export const TacticalMap: React.FC<MapProps> = ({
           </filter>
         </defs>
 
-        {/* Territory Polygons (Grid-based path rendering) */}
+        {/* Territory Polygons */}
         {countries.map(c => {
           const color = getDisplayColor(c);
           const isSelected = selection.includes(c.id);
           
           return (
             <g key={c.id} className="cursor-pointer" onClick={() => onSelectCountry(c)}>
-              {/* Internal Provinces / Zones */}
+              {/* Internal Provinces */}
               {c.provinces.map((prov, pidx) => (
                 <g key={`${c.id}-prov-${pidx}`}>
                   {prov.points.map((p, i) => (
@@ -57,7 +57,6 @@ export const TacticalMap: React.FC<MapProps> = ({
                       width={10.5} 
                       height={10.5} 
                       fill={color} 
-                      className="transition-all duration-300"
                     />
                   ))}
                   {/* Subtle province boundaries */}
@@ -69,14 +68,14 @@ export const TacticalMap: React.FC<MapProps> = ({
                       width={10.5} 
                       height={10.5} 
                       fill="none" 
-                      stroke="rgba(0,0,0,0.05)"
-                      strokeWidth="0.5"
+                      stroke="rgba(0,0,0,0.08)"
+                      strokeWidth="0.4"
                     />
                   ))}
                 </g>
               ))}
 
-              {/* Main Country Outline */}
+              {/* Country Highlight Overlay */}
               <g opacity={isSelected ? 1 : 0.8}>
                 {c.points.map((p, i) => (
                   <rect 
@@ -111,7 +110,7 @@ export const TacticalMap: React.FC<MapProps> = ({
                   fill="none" 
                   stroke="white" 
                   strokeWidth="2"
-                  strokeOpacity="0.5"
+                  strokeOpacity="0.6"
                 />
               ))}
             </g>
@@ -126,8 +125,8 @@ export const TacticalMap: React.FC<MapProps> = ({
               x={c.center.x} 
               y={c.center.y} 
               textAnchor="middle" 
-              className="pointer-events-none uppercase font-headline font-bold text-[10px] tracking-widest fill-black/60 filter drop-shadow-sm"
-              style={{ textShadow: '0 0 3px rgba(255,255,255,0.8)' }}
+              className="pointer-events-none uppercase font-headline font-bold text-[10px] tracking-widest fill-black/60"
+              style={{ textShadow: '0 0 3px rgba(255,255,255,0.9)' }}
             >
               {c.name}
             </text>
@@ -138,19 +137,19 @@ export const TacticalMap: React.FC<MapProps> = ({
                 <circle 
                   cx={s.coords.x} 
                   cy={s.coords.y} 
-                  r={8} 
+                  r={7} 
                   fill="white"
                   stroke="black"
-                  strokeWidth="1.5"
+                  strokeWidth="1.2"
                   filter="url(#shadow)"
                 />
-                <g transform={`translate(${s.coords.x - 5}, ${s.coords.y - 5})`}>
+                <g transform={`translate(${s.coords.x - 4.5}, ${s.coords.y - 4.5})`}>
                   {s.type === 'capital' ? (
-                    <Landmark size={10} className="text-black" />
+                    <Landmark size={9} className="text-black" />
                   ) : s.type === 'city' ? (
-                    <Building2 size={8} className="text-black/60" />
+                    <Building2 size={7} className="text-black/60" />
                   ) : (
-                    <ShieldAlert size={8} className="text-destructive" />
+                    <ShieldAlert size={7} className="text-destructive" />
                   )}
                 </g>
               </g>
