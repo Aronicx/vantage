@@ -23,6 +23,11 @@ export interface CountryStats {
   population: number; // In millions
   military: MilitaryStats;
   growthRate: number; // Base multiplier for economy/population
+  lastGrowth: {
+    economy: number;
+    population: number;
+    military: number;
+  };
 }
 
 export interface Country {
@@ -35,6 +40,7 @@ export interface Country {
   center: Point;
   settlements: Settlement[];
   stats: CountryStats;
+  isAtWar?: boolean;
   lore?: {
     historicalNarrative: string;
     diplomaticRelationships: any[];
@@ -47,6 +53,7 @@ export interface GameState {
   width: number;
   height: number;
   gameYear: number;
+  isPaused: boolean;
 }
 
 const FLAG_PALETTES = [
@@ -100,6 +107,7 @@ export async function generateNewWorld(width: number, height: number): Promise<G
           naval: 10 + Math.random() * 40,
         },
         growthRate: 1.015 + Math.random() * 0.035,
+        lastGrowth: { economy: 0, population: 0, military: 0 }
       }
     });
   });
@@ -109,7 +117,6 @@ export async function generateNewWorld(width: number, height: number): Promise<G
   for (let x = 0; x < width; x += gridSize) {
     for (let y = 0; y < height; y += gridSize) {
       const p = { x, y };
-      // Limit landmass to a certain radius to feel like an island/continent
       const distToWorldCenter = getDistance(p, { x: width / 2, y: height / 2 });
       if (distToWorldCenter > Math.min(width, height) * 0.48) continue;
 
@@ -134,7 +141,6 @@ export async function generateNewWorld(width: number, height: number): Promise<G
   countries.forEach(c => {
     if (c.points.length === 0) return;
 
-    // Capital
     c.settlements.push({
       id: `${c.id}-cap`,
       name: `Capital Prime`,
@@ -142,11 +148,9 @@ export async function generateNewWorld(width: number, height: number): Promise<G
       coords: c.center,
     });
 
-    // Cities
     const cityCount = 2 + Math.floor(Math.random() * 3);
     for (let i = 0; i < cityCount; i++) {
       const p = c.points[Math.floor(Math.random() * c.points.length)];
-      // Avoid placing right on top of capital
       if (getDistance(p, c.center) < 60) continue;
       c.settlements.push({
         id: `${c.id}-city-${i}`,
@@ -156,11 +160,9 @@ export async function generateNewWorld(width: number, height: number): Promise<G
       });
     }
 
-    // Military Posts (Outposts)
     const outpostCount = 1 + Math.floor(Math.random() * 2);
     for (let i = 0; i < outpostCount; i++) {
       const p = c.points[Math.floor(Math.random() * c.points.length)];
-      // Outposts are usually further from the center
       c.settlements.push({
         id: `${c.id}-post-${i}`,
         name: `Military Outpost ${i + 1}`,
@@ -186,7 +188,6 @@ export async function generateNewWorld(width: number, height: number): Promise<G
           namingConventions: countryLore.namingConventions,
         };
 
-        // Rename settlements based on naming conventions
         const { cityNamesExamples } = countryLore.namingConventions;
         c.settlements.forEach((s, idx) => {
           if (s.type === 'capital') s.name = cityNamesExamples[0] || s.name;
@@ -199,22 +200,37 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     console.error("Lore generation failed, using defaults", err);
   }
 
-  return { countries, width, height, gameYear: 2148 };
+  return { countries, width, height, gameYear: 2148, isPaused: false };
 }
 
 export function processTick(state: GameState): GameState {
-  const updatedCountries = state.countries.map(c => {
-    const newStats = { ...c.stats, military: { ...c.stats.military } };
-    
-    // Growth
-    newStats.population *= (1 + (c.stats.growthRate - 1) * 0.4);
-    newStats.economy *= c.stats.growthRate;
+  if (state.isPaused) return state;
 
-    // Military Reinvestment (Peace-time growth)
-    const militaryBudget = (newStats.economy - c.stats.economy) * 0.08;
-    newStats.military.ground += militaryBudget * 0.5;
-    newStats.military.air += militaryBudget * 0.3;
-    newStats.military.naval += militaryBudget * 0.2;
+  const updatedCountries = state.countries.map(c => {
+    const prevStats = c.stats;
+    const newStats = { ...prevStats, military: { ...prevStats.military } };
+    
+    // 1. Population Growth (affected by stability)
+    const popGrowth = prevStats.population * (prevStats.growthRate - 1) * 0.4;
+    newStats.population += popGrowth;
+
+    // 2. Economic Growth
+    const econGrowth = prevStats.economy * (prevStats.growthRate - 1);
+    newStats.economy += econGrowth;
+
+    // 3. Military Reinvestment
+    // Peace-time: reinvest a percentage of GDP growth into military
+    const milInvestment = econGrowth * 0.12; 
+    newStats.military.ground += milInvestment * 0.5;
+    newStats.military.air += milInvestment * 0.3;
+    newStats.military.naval += milInvestment * 0.2;
+
+    // Track last growth for UI
+    newStats.lastGrowth = {
+      economy: econGrowth,
+      population: popGrowth,
+      military: milInvestment
+    };
 
     return { ...c, stats: newStats };
   });

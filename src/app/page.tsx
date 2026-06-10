@@ -19,7 +19,9 @@ import {
   TrendingUp,
   Plane,
   Anchor,
-  CircleDot
+  CircleDot,
+  Pause,
+  Play
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -51,7 +53,7 @@ export default function VantagePoint() {
     if (world && !timerRef.current) {
       timerRef.current = setInterval(() => {
         setWorld(prev => prev ? processTick(prev) : null);
-      }, 3000); // Process a year every 3 seconds
+      }, 3000); 
     }
   }, [world]);
 
@@ -65,6 +67,12 @@ export default function VantagePoint() {
     setLoading(false);
     setSelectedCountryId(null);
     setSelectedSettlement(null);
+  };
+
+  const togglePause = () => {
+    if (world) {
+      setWorld({ ...world, isPaused: !world.isPaused });
+    }
   };
 
   const toggleOverlay = (key: keyof typeof overlays) => {
@@ -135,21 +143,31 @@ export default function VantagePoint() {
               <Activity className="h-4 w-4" />
             </Button>
           </div>
-          <Button 
-            size="icon" 
-            variant="ghost" 
-            className="bg-black/40 backdrop-blur-md border border-white/10 text-white hover:text-accent"
-            onClick={initNewGame}
-          >
-            <RotateCcw className="h-4 w-4" />
-          </Button>
+          <div className="flex flex-col gap-1">
+            <Button 
+              size="icon" 
+              variant="ghost" 
+              className="bg-black/40 backdrop-blur-md border border-white/10 text-white hover:text-accent"
+              onClick={togglePause}
+            >
+              {world?.isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+            </Button>
+            <Button 
+              size="icon" 
+              variant="ghost" 
+              className="bg-black/40 backdrop-blur-md border border-white/10 text-white hover:text-accent"
+              onClick={initNewGame}
+            >
+              <RotateCcw className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
         {/* Game Year Display */}
         <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-6 bg-black/40 backdrop-blur-md border border-white/10 px-6 py-2 rounded-full pointer-events-none z-20">
           <div className="flex flex-col items-center">
             <span className="text-[10px] text-accent uppercase font-headline">Status</span>
-            <span className="text-xs text-white">READY</span>
+            <span className="text-xs text-white uppercase">{world?.isPaused ? 'Paused' : 'Active'}</span>
           </div>
           <div className="h-4 w-px bg-white/10" />
           <div className="flex flex-col items-center">
@@ -215,7 +233,7 @@ export default function VantagePoint() {
                       </div>
                       <div className="flex items-baseline gap-2">
                         <span className="text-xl font-headline text-white">{selectedCountry.stats.population.toFixed(1)}M</span>
-                        <span className="text-[10px] text-green-500 font-code">+{(selectedCountry.stats.growthRate - 1).toFixed(2)}%</span>
+                        <span className="text-[10px] text-green-500 font-code">+{selectedCountry.stats.lastGrowth.population.toFixed(2)}</span>
                       </div>
                       <Progress value={Math.min(100, selectedCountry.stats.population)} className="h-1 bg-white/10" />
                     </div>
@@ -226,7 +244,7 @@ export default function VantagePoint() {
                       </div>
                       <div className="flex items-baseline gap-2">
                         <span className="text-xl font-headline text-white">${selectedCountry.stats.economy.toFixed(0)}B</span>
-                        <span className="text-[10px] text-green-500 font-code">+{(selectedCountry.stats.growthRate - 1).toFixed(2)}%</span>
+                        <span className="text-[10px] text-green-500 font-code">+${selectedCountry.stats.lastGrowth.economy.toFixed(1)}</span>
                       </div>
                       <Progress value={Math.min(100, selectedCountry.stats.economy / 10)} className="h-1 bg-white/10" />
                     </div>
