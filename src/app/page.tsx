@@ -9,7 +9,9 @@ import {
   executeAllianceWar, 
   mergeCountries,
   renameCountry,
+  updateCountryColor,
   splitCountry,
+  POLITICAL_COLORS,
   GameState, 
   Country 
 } from './lib/game-logic';
@@ -39,7 +41,8 @@ import {
   ChevronRight,
   Menu,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  Palette
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -47,6 +50,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -191,6 +195,13 @@ export default function VantagePoint() {
     setEditingId(null);
     setEditingName('');
     toast({ title: "Record Updated", description: "The nation has been officially renamed." });
+  };
+
+  const handleColorChange = (id: string, color: string) => {
+    if (!world) return;
+    const nextWorld = updateCountryColor(world, id, color);
+    setWorld(nextWorld);
+    toast({ title: "Map Refined", description: "National administrative color has been updated." });
   };
 
   if (!world || !world.gameStarted) {
@@ -548,7 +559,56 @@ export default function VantagePoint() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3 flex-1 overflow-hidden">
                         <span className="text-[9px] font-bold opacity-20 shrink-0">#{idx + 1}</span>
-                        <div className="w-4 h-4 shrink-0 border border-black/5" style={{ backgroundColor: c.color }} />
+                        
+                        {/* Color Picker Popover */}
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button 
+                              variant="outline" 
+                              className="w-5 h-5 shrink-0 border border-black/10 p-0 rounded-none overflow-hidden hover:opacity-80"
+                              style={{ backgroundColor: c.color }}
+                            >
+                              <span className="sr-only">Change color</span>
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[180px] p-2 rounded-none border-black/10 shadow-xl bg-white" side="left">
+                            <div className="grid grid-cols-5 gap-1 mb-2">
+                              {POLITICAL_COLORS.map(pc => (
+                                <button
+                                  key={pc}
+                                  className={cn(
+                                    "w-6 h-6 border border-black/5 transition-transform hover:scale-110",
+                                    c.color === pc && "ring-1 ring-black ring-offset-1"
+                                  )}
+                                  style={{ backgroundColor: pc }}
+                                  onClick={() => handleColorChange(c.id, pc)}
+                                />
+                              ))}
+                            </div>
+                            <div className="space-y-1 pt-1 border-t border-black/5">
+                              <label className="text-[7px] font-bold uppercase text-muted-foreground block">Custom Hex</label>
+                              <div className="flex gap-1">
+                                <Input 
+                                  type="text" 
+                                  className="h-6 text-[9px] px-1 rounded-none font-mono"
+                                  placeholder="#000000"
+                                  defaultValue={c.color}
+                                  onBlur={(e) => {
+                                    const val = e.target.value;
+                                    if (/^#[0-9A-F]{6}$/i.test(val)) handleColorChange(c.id, val);
+                                  }}
+                                />
+                                <input 
+                                  type="color" 
+                                  className="w-6 h-6 p-0 border-0 bg-transparent cursor-pointer"
+                                  defaultValue={c.color}
+                                  onChange={(e) => handleColorChange(c.id, e.target.value)}
+                                />
+                              </div>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+
                         {isEditing ? (
                           <div className="flex items-center gap-1 flex-1">
                             <Input 

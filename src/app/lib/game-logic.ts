@@ -67,7 +67,7 @@ export interface GameState {
   simulationSpeed: number;
 }
 
-const POLITICAL_COLORS = [
+export const POLITICAL_COLORS = [
   '#F28482', '#84A59D', '#F5CAC3', '#F7EDE2', '#F6BD60', 
   '#FF9F1C', '#2EC4B6', '#E71D36', '#CB997E', 
   '#A5A58D', '#6B705C', '#B7B7A4', '#FFE8D6', '#DDBEA9',
@@ -462,6 +462,13 @@ export function renameCountry(state: GameState, id: string, newName: string): Ga
   return {
     ...state,
     countries: state.countries.map(c => c.id === id ? { ...c, name: newName } : c)
+  };
+}
+
+export function updateCountryColor(state: GameState, id: string, newColor: string): GameState {
+  return {
+    ...state,
+    countries: state.countries.map(c => c.id === id ? { ...c, color: newColor } : c)
   };
 }
 
