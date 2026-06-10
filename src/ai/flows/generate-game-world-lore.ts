@@ -61,7 +61,34 @@ const generateLorePrompt = ai.definePrompt({
   name: 'generateLorePrompt',
   input: { schema: GenerateGameWorldLoreInputSchema },
   output: { schema: GenerateGameWorldLoreOutputSchema },
-  prompt: `You are an expert geopolitical historian and world-builder for a strategy game. Your task is to generate detailed lore for a set of fictional countries on a new world map. For each country, you need to create a unique historical narrative, define its diplomatic relationships with other countries in the provided list, and establish its distinctive naming conventions.\n\nThe output should be a JSON array of country lore objects, each containing an ID, name, historical narrative, a list of diplomatic relationships, and naming conventions.\n\nEnsure that:\n1.  **Historical Narratives** are rich and provide context for the current diplomatic relationships. They should cover key events, conflicts, and cultural developments.\n2.  **Diplomatic Relationships** are plausible and reflect a history of interactions, conflicts, or alliances between the listed countries. The relationships should be diverse (ally, neutral, rival, enemy, vassal, overlord, disputed). Every country should have at least one relationship defined with another country from the input list, if possible.\n3.  **Naming Conventions** feel consistent with the country's history and cultural identity. Provide examples for city names, river names, and historical figures' names, along with a description of the linguistic influence.\n\nHere is the list of countries for which you need to generate lore. Use their IDs for targetCountryId in diplomatic relationships:\n\n{{#each countries}}\n- ID: {{this.id}}, Name: {{this.name}}\n{{/each}}\n\nGenerate the full JSON output directly, without any additional conversational text.`,
+  prompt: `You are a master world-builder and geopolitical historian specializing in grand strategy games like Europa Universalis, Crusader Kings, and high-fantasy settings. 
+
+Your task is to generate immersive, creative, and phonetically unique lore for a set of countries.
+
+### CRITICAL INSTRUCTION FOR COUNTRY NAMES:
+Avoid generic, repetitive, or cliché names (e.g., "Nation A", "United Kingdom", "The Republic", "Kingdom of [Name]"). Instead, craft names that sound like they have deep linguistic roots and historical weight. 
+
+Think across different phonetic spectrums:
+- **Guttural & Harsh**: (e.g., Khurzak, Vroth-Gar, Zarakh-Thul) - often associated with rugged terrain or militaristic cultures.
+- **Melodic & Ethereal**: (e.g., Aethelgard, Olyndia, Valysria, Lyonesse) - often associated with ancient lineages or maritime power.
+- **Evocative & Descriptive**: (e.g., Iron-Reach, Mist-Hollow, The Sunder-Isles, Cloud-Blight) - names that reflect geography or a defining event.
+- **Ancient & Latinate**: (e.g., Aurelium, Praetoria, Argentia) - reflecting fallen empires or clerical traditions.
+- **Syllabic & Unique**: (e.g., Tenoch-Tla, Shambala-Desh, Kymur-Zai).
+
+DO NOT use real-world country names directly. Instead, invent new words that feel authentic to a fictional world.
+
+### Deliverables for each country:
+1.  **Name**: A unique, striking name that fits a strategy game map.
+2.  **Historical Narrative**: A rich history. Why is this country here? What major war or cultural shift defined its current borders?
+3.  **Diplomatic Relationships**: How does it view the *other* countries in this specific list? (Use their IDs). Create meaningful rivalries (territorial disputes, ancient grudges) or alliances (trade pacts, shared ancestry).
+4.  **Naming Conventions**: Explain the "sound" of their language and provide 3-5 examples of cities, rivers, and heroes that share this phonetic style.
+
+Input Countries:
+{{#each countries}}
+- ID: {{this.id}}, Initial placeholder: {{this.name}}
+{{/each}}
+
+Ensure the JSON output is complete and strictly adheres to the schema.`,
 });
 
 // Flow definition with more robust retry logic and fallback
@@ -104,14 +131,14 @@ const generateGameWorldLoreFlow = ai.defineFlow(
           return {
             countriesLore: input.countries.map(c => ({
               id: c.id,
-              name: c.name,
-              historicalNarrative: "The history of this land is lost to time.",
+              name: `Principality of ${c.name.split(' ')[1] || 'Unknown'}`,
+              historicalNarrative: "The history of this land is shrouded in mystery and clouded by ancient wars.",
               diplomaticRelationships: [],
               namingConventions: {
-                languageInfluence: "Unknown",
-                cityNamesExamples: [c.name],
-                riverNamesExamples: [],
-                historicalFiguresNamesExamples: []
+                languageInfluence: "Archaic and guttural",
+                cityNamesExamples: ["Old Port", "Castle Rock"],
+                riverNamesExamples: ["Silver Flow"],
+                historicalFiguresNamesExamples: ["The Unnamed King"]
               }
             }))
           };
