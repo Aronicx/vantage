@@ -37,6 +37,7 @@ export const TacticalMap: React.FC<MapProps> = ({
       >
         <defs>
           <filter id="crisp-geo">
+            {/* The Gooey Effect: Blur then Sharpen */}
             <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
             <feColorMatrix 
               in="blur" 
@@ -44,7 +45,20 @@ export const TacticalMap: React.FC<MapProps> = ({
               values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 25 -9" 
               result="crisp" 
             />
-            <feComposite in="SourceGraphic" in2="crisp" operator="atop" />
+            {/* Outline logic: Dilate the crisp shape, then subtract the original */}
+            <feMorphology in="crisp" operator="dilate" radius="1.5" result="dilated" />
+            <feComposite in="dilated" in2="crisp" operator="out" result="outline" />
+            
+            {/* Color the outline black */}
+            <feFlood floodColor="black" result="black" />
+            <feComposite in="black" in2="outline" operator="in" result="blackOutline" />
+            
+            {/* Combine: Background color atop the crisp mask, then add the black outline */}
+            <feComposite in="SourceGraphic" in2="crisp" operator="atop" result="mainFill" />
+            <feMerge>
+              <feMergeNode in="mainFill" />
+              <feMergeNode in="blackOutline" />
+            </feMerge>
           </filter>
           
           <filter id="text-glow">
