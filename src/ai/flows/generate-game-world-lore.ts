@@ -61,27 +61,31 @@ const generateLorePrompt = ai.definePrompt({
   name: 'generateLorePrompt',
   input: { schema: GenerateGameWorldLoreInputSchema },
   output: { schema: GenerateGameWorldLoreOutputSchema },
-  prompt: `You are a master world-builder and geopolitical historian specializing in grand strategy games like Europa Universalis, Crusader Kings, and high-fantasy settings. 
-
-Your task is to generate immersive, creative, and phonetically unique lore for a set of countries.
+  prompt: `You are a master world-builder and geopolitical historian. Your task is to generate immersive lore and names for a set of countries in a strategy game sandbox.
 
 ### CRITICAL INSTRUCTION FOR COUNTRY NAMES:
-Avoid generic, repetitive, or cliché names (e.g., "Nation A", "United Kingdom", "The Republic", "Kingdom of [Name]"). Instead, craft names that sound like they have deep linguistic roots and historical weight. 
+Instead of completely random fantasy names, generate fictional names inspired by real-world geography, regions, states, and cities. Mix or slightly modify these to create unique "alternate-history" style names.
 
-Think across different phonetic spectrums:
-- **Guttural & Harsh**: (e.g., Khurzak, Vroth-Gar, Zarakh-Thul) - often associated with rugged terrain or militaristic cultures.
-- **Melodic & Ethereal**: (e.g., Aethelgard, Olyndia, Valysria, Lyonesse) - often associated with ancient lineages or maritime power.
-- **Evocative & Descriptive**: (e.g., Iron-Reach, Mist-Hollow, The Sunder-Isles, Cloud-Blight) - names that reflect geography or a defining event.
-- **Ancient & Latinate**: (e.g., Aurelium, Praetoria, Argentia) - reflecting fallen empires or clerical traditions.
-- **Syllabic & Unique**: (e.g., Tenoch-Tla, Shambala-Desh, Kymur-Zai).
+**Sources of Inspiration (Mix & Match):**
+- **Europe/Eurasia**: Silesia, Bavaria, Aquitaine, Pomerania, Thrace, Anatolia, Crimea, Ural.
+- **Asia/Pacific**: Sunda, Hokkaido, Punjab, Malabar, Gobi, Bengal, Mindanao, Kanto.
+- **Africa**: Sahel, Rif, Maghreb, Serengeti, Zambezi, Dahomey, Nubia.
+- **Americas**: Cascadia, Acadia, Yucatan, Patagonia, Atacama, Darien, Appalachia.
+- **Middle East**: Levant, Hejaz, Mesopotamia, Elam, Petra, Shiraz.
 
-DO NOT use real-world country names directly. Instead, invent new words that feel authentic to a fictional world.
+**How to Modify Names:**
+1.  **Compound Names**: Combine a geographic root with a direction or descriptor (e.g., "North Aquitaine", "Lower Sunda", "Great Uralia").
+2.  **Linguistic Shifts**: Change suffixes (e.g., Silesia -> Silesian Commonwealth, Maghreb -> Maghrebia, Thrace -> Thracian Coast).
+3.  **Historical Blends**: Imagine a merger of cultures (e.g., "Cascadia-Nord", "Balkan-Rim", "Indo-Sunda").
+4.  **Descriptive Regions**: Use geological features (e.g., "The Altiplano Republic", "Sunda-Archipelago", "Sahara-Sud").
+
+DO NOT use modern sovereign state names directly (e.g., No "France", "Japan", "Brazil"). Instead, use regional identities to create a sense of place.
 
 ### Deliverables for each country:
-1.  **Name**: A unique, striking name that fits a strategy game map.
-2.  **Historical Narrative**: A rich history. Why is this country here? What major war or cultural shift defined its current borders?
-3.  **Diplomatic Relationships**: How does it view the *other* countries in this specific list? (Use their IDs). Create meaningful rivalries (territorial disputes, ancient grudges) or alliances (trade pacts, shared ancestry).
-4.  **Naming Conventions**: Explain the "sound" of their language and provide 3-5 examples of cities, rivers, and heroes that share this phonetic style.
+1.  **Name**: A unique, striking name that feels grounded in real-world geography.
+2.  **Historical Narrative**: A rich history explaining how this regional entity became a power.
+3.  **Diplomatic Relationships**: How it views the *other* countries in this specific list? (Use their IDs).
+4.  **Naming Conventions**: Provide 3-5 examples of cities, rivers, and heroes that follow the country's phonetic style.
 
 Input Countries:
 {{#each countries}}
@@ -91,7 +95,7 @@ Input Countries:
 Ensure the JSON output is complete and strictly adheres to the schema.`,
 });
 
-// Flow definition with more robust retry logic and fallback
+// Flow definition with robust retry logic
 const generateGameWorldLoreFlow = ai.defineFlow(
   {
     name: 'generateGameWorldLoreFlow',
@@ -125,20 +129,24 @@ const generateGameWorldLoreFlow = ai.defineFlow(
         
         console.error(`Attempt ${attempts} at lore generation failed:`, error);
         
-        // If we've exhausted retries, return a fallback instead of crashing
         if (attempts >= maxAttempts) {
-          console.warn('Lore generation failed all retries. Using fallback empty lore.');
+          console.warn('Lore generation failed all retries. Using fallback geographically inspired names.');
+          const fallbackNames = [
+            "North Cascadia", "Sunda-Isles", "Balkan-Rim", "Great Pomerania", 
+            "Levant-Sud", "Uralian League", "Maghrebia", "Andean Union",
+            "Silesian Reach", "Kanto-West", "Sahelian Coast", "Patagonian Core"
+          ];
           return {
-            countriesLore: input.countries.map(c => ({
+            countriesLore: input.countries.map((c, i) => ({
               id: c.id,
-              name: `Principality of ${c.name.split(' ')[1] || 'Unknown'}`,
-              historicalNarrative: "The history of this land is shrouded in mystery and clouded by ancient wars.",
+              name: fallbackNames[i % fallbackNames.length] || `Region ${c.name}`,
+              historicalNarrative: "A regional power with a complex history defined by its geography and local traditions.",
               diplomaticRelationships: [],
               namingConventions: {
-                languageInfluence: "Archaic and guttural",
-                cityNamesExamples: ["Old Port", "Castle Rock"],
-                riverNamesExamples: ["Silver Flow"],
-                historicalFiguresNamesExamples: ["The Unnamed King"]
+                languageInfluence: "Geographically grounded and historic",
+                cityNamesExamples: ["Capital City", "Port Royal"],
+                riverNamesExamples: ["Great River"],
+                historicalFiguresNamesExamples: ["The Founder"]
               }
             }))
           };
@@ -146,7 +154,6 @@ const generateGameWorldLoreFlow = ai.defineFlow(
       }
     }
     
-    // Final defensive fallback
     return { countriesLore: [] };
   }
 );
