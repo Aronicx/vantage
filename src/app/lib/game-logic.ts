@@ -234,11 +234,11 @@ export function processTick(state: GameState): GameState {
 
     // Post-war effects
     if (c.recoveryEndYear && state.gameYear <= c.recoveryEndYear) {
-      // Recovery phase: Slower growth
-      currentGrowth = 1 + (stats.growthRate - 1) * 0.5;
+      // Recovery phase: Slower growth (struggling nation)
+      currentGrowth = 1 + (stats.growthRate - 1) * 0.4;
     } else if (c.boomEndYear && state.gameYear <= c.boomEndYear) {
       // Boom phase: Accelerated growth from integration
-      currentGrowth = 1 + (stats.growthRate - 1) * 1.5;
+      currentGrowth = 1 + (stats.growthRate - 1) * 1.6;
     }
 
     stats.population *= currentGrowth;
@@ -268,10 +268,17 @@ export function executeBattle(state: GameState, id1: string, id2: string): { sta
   const loser = power1Adjusted > power2 ? c2 : c1;
   const ratio = Math.max(power1, power2) / Math.min(power1, power2);
 
-  // War Attrition: Both sides lose resources
-  const winnerAttrition = 0.05 + (Math.random() * 0.05); // 5-10% loss
-  const loserAttrition = 0.15 + (Math.random() * 0.1); // 15-25% loss
+  // Is the loser already weakened/recovering from a previous war?
+  const isLoserVulnerable = loser.recoveryEndYear && state.gameYear <= loser.recoveryEndYear;
 
+  // Harsher Attrition
+  const winnerAttrition = 0.05 + (Math.random() * 0.05); // 5-10% loss
+  // If loser is vulnerable, attrition is even higher due to collapsed infrastructure
+  const loserAttrition = isLoserVulnerable 
+    ? 0.35 + (Math.random() * 0.15) // 35-50% loss if already recovering
+    : 0.20 + (Math.random() * 0.10); // 20-30% immediate loss normally
+
+  // Apply Immediate Stat Losses
   winner.stats.economy *= (1 - winnerAttrition);
   winner.stats.population *= (1 - winnerAttrition * 0.5);
   winner.stats.military.ground *= (1 - winnerAttrition * 1.5);
@@ -279,19 +286,30 @@ export function executeBattle(state: GameState, id1: string, id2: string): { sta
   winner.stats.military.naval *= (1 - winnerAttrition * 1.2);
 
   loser.stats.economy *= (1 - loserAttrition);
-  loser.stats.population *= (1 - loserAttrition * 0.5);
-  loser.stats.military.ground *= (1 - loserAttrition * 1.5);
-  loser.stats.military.air *= (1 - loserAttrition * 1.5);
-  loser.stats.military.naval *= (1 - loserAttrition * 1.2);
+  loser.stats.population *= (1 - loserAttrition * 0.7); // Losers lose more population (refugees/war deaths)
+  loser.stats.military.ground *= (1 - loserAttrition * 2.0);
+  loser.stats.military.air *= (1 - loserAttrition * 2.0);
+  loser.stats.military.naval *= (1 - loserAttrition * 1.8);
 
-  // Set Winner's Recovery and Boom cycles
-  winner.recoveryEndYear = state.gameYear + 5;
-  winner.boomEndYear = state.gameYear + 15;
+  // Set Post-War Cycles
+  winner.recoveryEndYear = state.gameYear + 5; // Winner recovers for 5 years
+  winner.boomEndYear = state.gameYear + 15;   // Winner booms until year 15
+  
+  // Loser is marked for recovery (vulnerability period)
+  loser.recoveryEndYear = state.gameYear + 10; 
 
+  // Territory Transfer Logic
   let lossPercent = 0.15;
   let resultText = 'Minor border adjustment.';
-  if (ratio > 1.8) { lossPercent = 0.3; resultText = 'Significant breakthrough.'; }
-  if (ratio > 3.0) { lossPercent = 0.5; resultText = 'Major offensive success.'; }
+
+  if (isLoserVulnerable) {
+    // If vulnerable, lose 60-90% of territory immediately
+    lossPercent = 0.6 + Math.random() * 0.3;
+    resultText = `${loser.name}'s defenses collapsed! Catastrophic territorial loss.`;
+  } else {
+    if (ratio > 1.8) { lossPercent = 0.3; resultText = 'Significant breakthrough.'; }
+    if (ratio > 3.0) { lossPercent = 0.5; resultText = 'Major offensive success.'; }
+  }
 
   const pointsToTransferCount = Math.floor(loser.points.length * lossPercent);
   loser.points.sort((a, b) => getDistance(a, winner.center) - getDistance(b, winner.center));
@@ -324,14 +342,15 @@ export function executeBattle(state: GameState, id1: string, id2: string): { sta
         allianceId: undefined,
         stats: {
            ...loser.stats,
-           economy: loser.stats.economy * 0.5,
-           population: loser.stats.population * 0.5,
+           economy: loser.stats.economy * 0.4, // Rump states start extremely weak
+           population: loser.stats.population * 0.4,
            military: {
-             ground: loser.stats.military.ground * 0.3,
-             air: loser.stats.military.air * 0.3,
-             naval: loser.stats.military.naval * 0.3
+             ground: loser.stats.military.ground * 0.2,
+             air: loser.stats.military.air * 0.2,
+             naval: loser.stats.military.naval * 0.2
            }
-        }
+        },
+        recoveryEndYear: state.gameYear + 15 // Long recovery for rump states
       };
       
       nextCountries = nextCountries.filter(c => c.id !== loser.id).concat(newCountry);
@@ -344,6 +363,7 @@ export function executeBattle(state: GameState, id1: string, id2: string): { sta
     nextCountries = nextCountries.filter(c => c.id !== loser.id);
   }
 
+  // Recalculate Provinces for entities that changed size significantly
   nextCountries = nextCountries.map(country => {
     if (country.id === winner.id || (isCapitalCaptured && country.id.startsWith('country-rump-'))) {
        const provinceCount = Math.max(2, Math.floor(country.points.length / 50));
