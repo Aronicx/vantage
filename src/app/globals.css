@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    /* Map Background (Water): Light Blue #87CEEB -> hsl(197, 71%, 73%) */
+    /* Map Background (Ocean): Deep Sea Blue */
     --background: 197 71% 73%;
     --foreground: 215 19% 7%;
     
@@ -14,7 +14,6 @@
     --popover: 215 19% 10%;
     --popover-foreground: 210 20% 98%;
     
-    /* Command Blue */
     --primary: 212 50% 39%;
     --primary-foreground: 210 20% 98%;
     
@@ -24,7 +23,6 @@
     --muted: 215 15% 15%;
     --muted-foreground: 215 15% 65%;
     
-    /* Accent Glaze */
     --accent: 188 61% 53%;
     --accent-foreground: 215 19% 7%;
     
@@ -44,7 +42,7 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-[#0F1216] text-foreground;
   }
   h1, h2, h3, h4, h5, h6 {
     @apply font-headline tracking-tight;
@@ -52,19 +50,30 @@
 }
 
 .map-container {
+  background: radial-gradient(circle, #87CEEB 0%, #4682B4 100%);
   cursor: crosshair;
 }
 
 .country-label {
   pointer-events: none;
+  font-family: var(--font-headline);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  text-shadow: 0px 0px 3px rgba(255,255,255,0.8);
+  letter-spacing: 0.1em;
+  text-shadow: 1px 1px 0px rgba(255,255,255,0.5), -1px -1px 0px rgba(255,255,255,0.5);
+  fill: rgba(0,0,0,0.8);
 }
 
-@keyframes dash {
-  to {
-    stroke-dashoffset: -1000;
-  }
+.gooey-filter {
+  filter: url('#goo');
+}
+
+@keyframes pulse-territory {
+  0% { opacity: 0.8; }
+  50% { opacity: 1; }
+  100% { opacity: 0.8; }
+}
+
+.war-active {
+  animation: pulse-territory 2s infinite ease-in-out;
 }
