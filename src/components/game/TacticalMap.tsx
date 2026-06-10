@@ -25,13 +25,13 @@ export const TacticalMap: React.FC<MapProps> = ({
         preserveAspectRatio="xMidYMid meet"
       >
         <defs>
-          {/* Natural Organic Outline Filter (Gooey effect for smoother borders) */}
+          {/* Enhanced Smoothing Filter for Crisp, Curved Borders */}
           <filter id="crisp-geo">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="4.0" result="blur" />
+            <feGaussianBlur in="SourceGraphic" stdDeviation="3.0" result="blur" />
             <feColorMatrix 
               in="blur" 
               mode="matrix" 
-              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 50 -15" 
+              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 50 -18" 
               result="crisp" 
             />
             <feMorphology in="crisp" operator="dilate" radius="2.5" result="dilated" />
@@ -45,13 +45,13 @@ export const TacticalMap: React.FC<MapProps> = ({
             </feMerge>
           </filter>
 
-          {/* Internal Administrative Filter (Gooey smoothed internal borders) */}
+          {/* Internal Administrative Filter for Allied Member Borders */}
           <filter id="crisp-geo-grey">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="blur" />
+            <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="blur" />
             <feColorMatrix 
               in="blur" 
               mode="matrix" 
-              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 45 -13" 
+              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 45 -15" 
               result="crisp" 
             />
             <feMorphology in="crisp" operator="dilate" radius="1.8" result="dilated" />
@@ -76,7 +76,7 @@ export const TacticalMap: React.FC<MapProps> = ({
           </filter>
         </defs>
 
-        {/* 1. Internal Grey Borders Layer (Alliances Only) */}
+        {/* 1. Alliance Internal Borders Layer (Member separators) */}
         {alliances.map(alliance => (
           <g key={`${alliance.id}-internal`} filter="url(#crisp-geo-grey)">
             {countries.filter(c => c.allianceId === alliance.id).map(c => (
@@ -84,10 +84,10 @@ export const TacticalMap: React.FC<MapProps> = ({
                 {c.points.map((p, i) => (
                   <rect 
                     key={`${c.id}-p-int-${i}`} 
-                    x={p.x - 2.8} 
-                    y={p.y - 2.8} 
-                    width={5.6} 
-                    height={5.6} 
+                    x={p.x - 3.2} 
+                    y={p.y - 3.2} 
+                    width={6.4} 
+                    height={6.4} 
                     fill={alliance.color} 
                   />
                 ))}
@@ -96,23 +96,23 @@ export const TacticalMap: React.FC<MapProps> = ({
           </g>
         ))}
 
-        {/* 2. Outer Black Borders Layer (Independent Countries) */}
+        {/* 2. Independent Nation Outlines (Always Individual Black Borders) */}
         {countries.filter(c => !c.allianceId).map(c => (
           <g key={`${c.id}-outer`} filter="url(#crisp-geo)" className="cursor-pointer" onClick={() => onSelectCountry(c)}>
             {c.points.map((p, i) => (
               <rect 
                 key={`${c.id}-p-${i}`} 
-                x={p.x - 2.8} 
-                y={p.y - 2.8} 
-                width={5.6} 
-                height={5.6} 
+                x={p.x - 3.2} 
+                y={p.y - 3.2} 
+                width={6.4} 
+                height={6.4} 
                 fill={c.color} 
               />
             ))}
           </g>
         ))}
 
-        {/* 3. Outer Black Borders Layer (Alliances - Grouped for shared outlines) */}
+        {/* 3. Alliance Outer Outlines (Unified Continuous Borders for Touching Members) */}
         {alliances.map(alliance => (
           <g key={`${alliance.id}-outer`} filter="url(#crisp-geo)">
             {countries.filter(c => c.allianceId === alliance.id).map(c => (
@@ -120,10 +120,10 @@ export const TacticalMap: React.FC<MapProps> = ({
                 {c.points.map((p, i) => (
                   <rect 
                     key={`${c.id}-p-ext-${i}`} 
-                    x={p.x - 2.8} 
-                    y={p.y - 2.8} 
-                    width={5.6} 
-                    height={5.6} 
+                    x={p.x - 3.2} 
+                    y={p.y - 3.2} 
+                    width={6.4} 
+                    height={6.4} 
                     fill={alliance.color} 
                   />
                 ))}
@@ -132,7 +132,7 @@ export const TacticalMap: React.FC<MapProps> = ({
           </g>
         ))}
 
-        {/* 4. Active Selection Layer */}
+        {/* 4. Active Selection Indication */}
         {selection.map(id => {
           const c = countries.find(curr => curr.id === id);
           if (!c) return null;
@@ -141,21 +141,21 @@ export const TacticalMap: React.FC<MapProps> = ({
               {c.points.map((p, i) => (
                 <rect 
                   key={`sel-p-${i}`} 
-                  x={p.x - 3.2} 
-                  y={p.y - 3.2} 
-                  width={6.4} 
-                  height={6.4} 
+                  x={p.x - 3.8} 
+                  y={p.y - 3.8} 
+                  width={7.6} 
+                  height={7.6} 
                   fill="white" 
-                  fillOpacity="0.3"
+                  fillOpacity="0.4"
                   stroke="white" 
-                  strokeWidth="1.5"
+                  strokeWidth="2"
                 />
               ))}
             </g>
           );
         })}
 
-        {/* 5. Labels & Markers */}
+        {/* 5. UI Elements: Labels & City Markers */}
         {countries.map(c => {
           const capital = c.settlements.find(s => s.type === 'capital');
           if (!capital) return null;
@@ -169,7 +169,7 @@ export const TacticalMap: React.FC<MapProps> = ({
                 fill="black"
                 stroke="white"
                 strokeWidth="1.5"
-                filter="drop-shadow(0px 1px 2px rgba(0,0,0,0.3))"
+                filter="drop-shadow(0px 1px 2px rgba(0,0,0,0.4))"
               />
               <text 
                 x={capital.coords.x} 

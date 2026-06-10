@@ -96,20 +96,57 @@ export async function generateNewWorld(width: number, height: number): Promise<G
   const countries: Country[] = [];
   
   const landCenters: {p: Point, r: number}[] = [];
-  const landCenterCount = 6 + Math.floor(Math.random() * 4);
   const padding = width * 0.15;
-  
-  for(let i = 0; i < landCenterCount; i++) {
+  const centerX = width / 2;
+  const centerY = height / 2;
+
+  // 1. Generate Main Continent Mass (Central Cluster)
+  const mainMassCount = 6 + Math.floor(Math.random() * 4);
+  for(let i = 0; i < mainMassCount; i++) {
     landCenters.push({
       p: {
-        x: width * 0.35 + Math.random() * width * 0.3,
-        y: height * 0.35 + Math.random() * height * 0.3
+        x: centerX + (Math.random() - 0.5) * width * 0.25,
+        y: centerY + (Math.random() - 0.5) * height * 0.25
       },
       r: width * (0.12 + Math.random() * 0.08)
     });
   }
 
-  // Reduced Grid Size for smoother, high-res borders
+  // 2. Generate Satellite Islands
+  const islandCount = 8 + Math.floor(Math.random() * 6);
+  for(let i = 0; i < islandCount; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = width * (0.28 + Math.random() * 0.12);
+    landCenters.push({
+      p: {
+        x: centerX + Math.cos(angle) * dist,
+        y: centerY + Math.sin(angle) * dist
+      },
+      r: width * (0.04 + Math.random() * 0.05)
+    });
+  }
+
+  // 3. Generate Island Chains / Archipelagos
+  const chainCount = 2 + Math.floor(Math.random() * 2);
+  for(let i = 0; i < chainCount; i++) {
+    let currX = centerX + (Math.random() - 0.5) * width * 0.7;
+    let currY = centerY + (Math.random() - 0.5) * height * 0.7;
+    const pointsInChain = 3 + Math.floor(Math.random() * 3);
+    for(let j = 0; j < pointsInChain; j++) {
+      // Keep chain points within bounds
+      currX = Math.max(padding, Math.min(width - padding, currX));
+      currY = Math.max(padding, Math.min(height - padding, currY));
+      
+      landCenters.push({
+        p: { x: currX, y: currY },
+        r: width * (0.02 + Math.random() * 0.035)
+      });
+      currX += (Math.random() - 0.5) * width * 0.12;
+      currY += (Math.random() - 0.5) * width * 0.12;
+    }
+  }
+
+  // Grid Size for high-res borders
   const gridSize = 5;
   const landPoints: Point[] = [];
   const landPointSet = new Set<string>();
@@ -132,6 +169,7 @@ export async function generateNewWorld(width: number, height: number): Promise<G
 
     for (let attempt = 0; attempt < 20; attempt++) {
       const candidate = landPoints[Math.floor(Math.random() * landPoints.length)];
+      if (!candidate) continue;
       let minDist = Infinity;
       seeds.forEach(s => {
         const d = getDistance(candidate, s);
@@ -142,6 +180,7 @@ export async function generateNewWorld(width: number, height: number): Promise<G
         bestSeed = candidate;
       }
     }
+    if (!bestSeed) continue;
     seeds.push(bestSeed);
 
     const color = POLITICAL_COLORS[i % POLITICAL_COLORS.length];
@@ -179,7 +218,7 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     }
   });
 
-  const finalCountries = countries.filter(c => c.points.length > 20); // Adjusted threshold for higher resolution
+  const finalCountries = countries.filter(c => c.points.length > 25);
 
   finalCountries.forEach(c => {
     // Geography Detection
@@ -198,10 +237,11 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     }
     c.stats.isLandlocked = isLandlocked;
 
-    const sizeFactor = c.points.length / 200; // Adjusted for higher point density
-    const isPowerhouse = Math.random() > 0.90;
+    const sizeFactor = c.points.length / 250; 
+    const isPowerhouse = Math.random() > 0.92;
     const luckMultiplier = isPowerhouse ? (1.5 + Math.random() * 0.8) : (0.85 + Math.random() * 0.4);
     
+    // Geographic Balance
     const geoEconBonus = isLandlocked ? 0.90 : 1.15; 
     const geoMilBonus = isLandlocked ? 1.00 : 1.08;
 
@@ -210,12 +250,12 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     c.stats.military = {
       ground: (40 + sizeFactor * 80) * luckMultiplier * geoMilBonus,
       air: (10 + sizeFactor * 30) * luckMultiplier * geoMilBonus,
-      naval: isLandlocked ? (sizeFactor * 1) : (10 + sizeFactor * 40) * luckMultiplier * geoMilBonus,
+      naval: isLandlocked ? (sizeFactor * 2) : (10 + sizeFactor * 45) * luckMultiplier * geoMilBonus,
     };
 
     c.stats.growthRate = (isLandlocked ? 1.008 : 1.014) + (Math.random() * 0.008);
 
-    const provinceCount = Math.max(2, Math.floor(c.points.length / 120));
+    const provinceCount = Math.max(2, Math.floor(c.points.length / 150));
     const provinceSeeds: Point[] = [];
     for(let i=0; i<provinceCount; i++) {
       provinceSeeds.push(c.points[Math.floor(Math.random() * c.points.length)]);
@@ -297,8 +337,8 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
 
   const calculatePower = (c: Country) => {
     let p = c.stats.military.ground + c.stats.military.air + (c.stats.military.naval * 0.65);
-    p += (c.stats.economy * 0.15);
-    p += (c.stats.population * 2);
+    p += (c.stats.economy * 0.20); // Economy weight increased for development impact
+    p += (c.stats.population * 2.5);
     if (c.recoveryEndYear && state.gameYear <= c.recoveryEndYear) {
       p *= 0.6;
     }
@@ -307,8 +347,11 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   
   const p1 = calculatePower(c1);
   const p2 = calculatePower(c2);
+  
+  // Minimal luck factor (+/- 5%) for predictable outcomes
   const luck1 = 0.95 + Math.random() * 0.10;
   const luck2 = 0.95 + Math.random() * 0.10;
+  
   const effectiveP1 = p1 * luck1;
   const effectiveP2 = p2 * luck2;
 
@@ -330,6 +373,7 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   const originalLoserEconomy = loser.stats.economy;
   const originalLoserPopulation = loser.stats.population;
 
+  // Each participant gets a new color for the new era
   winner.color = getRandomColor();
   loser.color = getRandomColor();
 
@@ -565,14 +609,13 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
 
   for (let i = 0; i < parts; i++) {
     const points = partitionedPoints[i];
-    if (points.length < 5) continue; // Skip empty partitions
+    if (points.length < 5) continue; 
     
     const id = `split-${target.id}-${i}-${Date.now()}`;
     const avgX = points.reduce((s, p) => s + p.x, 0) / points.length;
     const avgY = points.reduce((s, p) => s + p.y, 0) / points.length;
     const center = { x: avgX, y: avgY };
     
-    const palette = FLAG_PALETTES[Math.floor(Math.random() * FLAG_PALETTES.length)];
     const share = points.length / target.points.length;
     const variance = 0.95 + Math.random() * 0.1;
 
@@ -594,7 +637,7 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
       ...target,
       id,
       name: splinterName,
-      color: POLITICAL_COLORS[Math.floor(Math.random() * POLITICAL_COLORS.length)],
+      color: getRandomColor(),
       center,
       points,
       settlements: [{ id: `${id}-cap`, name: `${splinterName} City`, type: 'capital', coords: center, ownerId: id }],
@@ -603,7 +646,6 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
       provinces: [] 
     };
 
-    // Recalculate internal provinces for splinter
     const pCount = Math.max(1, Math.floor(country.points.length / 120));
     const pSeeds: Point[] = [];
     for(let j=0; j<pCount; j++) pSeeds.push(country.points[Math.floor(Math.random() * country.points.length)]);
@@ -640,8 +682,8 @@ export function executeAllianceWar(state: GameState): GameState {
       const c = countries.find(curr => curr.id === cid);
       if (c) {
         let p = c.stats.military.ground + c.stats.military.air + (c.stats.military.naval * 0.65);
-        p += (c.stats.economy * 0.15);
-        p += (c.stats.population * 2);
+        p += (c.stats.economy * 0.20);
+        p += (c.stats.population * 2.5);
         if (c.recoveryEndYear && state.gameYear <= c.recoveryEndYear) p *= 0.6;
         combinedPower += p;
       }
