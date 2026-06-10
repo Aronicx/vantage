@@ -214,6 +214,30 @@ export async function generateNewWorld(width: number, height: number): Promise<G
   };
 }
 
+/**
+ * Finds all countries in a coalition with the given country based on active alliances.
+ */
+function getCoalition(countryId: string, relations: DiplomacyRelation[]): string[] {
+  const coalition = new Set<string>([countryId]);
+  let added = true;
+  while (added) {
+    added = false;
+    relations.forEach(r => {
+      if (r.type === 'alliance') {
+        const [c1, c2] = r.participants;
+        if (coalition.has(c1) && !coalition.has(c2)) {
+          coalition.add(c2);
+          added = true;
+        } else if (coalition.has(c2) && !coalition.has(c1)) {
+          coalition.add(c1);
+          added = true;
+        }
+      }
+    });
+  }
+  return Array.from(coalition);
+}
+
 export function processTick(state: GameState): GameState {
   if (state.isPaused) return state;
 
@@ -242,64 +266,113 @@ export function processTick(state: GameState): GameState {
     return { ...c, stats: newStats };
   });
 
-  // 2. War Phase (Territory Conquest)
+  // 2. War Phase (Alliance-Aware Territory Conquest)
   const warRelations = state.relations.filter(r => r.type === 'war');
   if (warRelations.length > 0) {
+    // Process each unique pair of warring coalitions
+    const processedWars = new Set<string>();
+
     warRelations.forEach(war => {
       const [id1, id2] = war.participants;
-      const c1 = updatedCountries.find(c => c.id === id1);
-      const c2 = updatedCountries.find(c => c.id === id2);
+      const key = [id1, id2].sort().join('-');
+      if (processedWars.has(key)) return;
+      processedWars.add(key);
 
-      if (!c1 || !c2 || c1.points.length === 0 || c2.points.length === 0) return;
+      const coalition1 = getCoalition(id1, state.relations);
+      const coalition2 = getCoalition(id2, state.relations);
 
-      // Calculate relative strength
-      const power1 = c1.stats.military.ground * 1.0 + c1.stats.military.air * 0.5;
-      const power2 = c2.stats.military.ground * 1.0 + c2.stats.military.air * 0.5;
-      const totalPower = power1 + power2;
+      // Power Calculation for the entire Alliance
+      const calcPower = (ids: string[]) => {
+        return ids.reduce((total, id) => {
+          const c = updatedCountries.find(curr => curr.id === id);
+          if (!c) return total;
+          return total + (c.stats.military.ground * 1.0 + c.stats.military.air * 0.5);
+        }, 0);
+      };
 
-      // Identify border points
-      const thresholdDist = 45; // Grid size is 30, so check slightly beyond adjacent
+      const power1 = calcPower(coalition1);
+      const power2 = calcPower(coalition2);
+
+      const winnerIds = power1 > power2 ? coalition1 : coalition2;
+      const loserIds = power1 > power2 ? coalition2 : coalition1;
       
-      // We flip a fixed number of points each tick based on power difference
-      const flipCount = Math.max(1, Math.floor(Math.abs(power1 - power2) / 20));
-      const winner = power1 > power2 ? c1 : c2;
-      const loser = power1 > power2 ? c2 : c1;
+      const powerDiff = Math.abs(power1 - power2);
+      const flipTotal = Math.max(1, Math.floor(powerDiff / 25));
 
-      // Find border points belonging to the loser
-      const borderPointsIndices: number[] = [];
-      loser.points.forEach((lp, idx) => {
-        const isNearWinner = winner.points.some(wp => getDistance(lp, wp) <= thresholdDist);
-        if (isNearWinner) {
-          borderPointsIndices.push(idx);
-        }
-      });
+      // Attempt to flip points for each loser in the alliance
+      loserIds.forEach(lId => {
+        const loser = updatedCountries.find(c => c.id === lId);
+        if (!loser || loser.points.length === 0) return;
 
-      // Shuffle and take top flipCount
-      const toFlip = borderPointsIndices
-        .sort(() => Math.random() - 0.5)
-        .slice(0, flipCount);
+        // The loser might lose territory to any winner adjacent to them
+        const borderPointsIndices: number[] = [];
+        const thresholdDist = 45;
 
-      if (toFlip.length > 0) {
-        // Transfer points
-        const pointsToMove = toFlip.map(idx => loser.points[idx]);
-        
-        // Update loser points
-        loser.points = loser.points.filter((_, idx) => !toFlip.includes(idx));
-        // Update winner points
-        winner.points.push(...pointsToMove);
+        loser.points.forEach((lp, idx) => {
+          const isNearAnyWinner = winnerIds.some(wId => {
+            const winner = updatedCountries.find(c => c.id === wId);
+            return winner?.points.some(wp => getDistance(lp, wp) <= thresholdDist);
+          });
+          
+          if (isNearAnyWinner) {
+            borderPointsIndices.push(idx);
+          }
+        });
 
-        // Check for settlement capture
-        updatedCountries.forEach(country => {
-          country.settlements.forEach(s => {
-            // A settlement is captured if its location is now surrounded by the enemy
-            // Simplification: If the winner now has a point very close to the settlement
-            const distToWinner = winner.points.reduce((min, p) => Math.min(min, getDistance(p, s.coords)), Infinity);
-            if (distToWinner < 15 && s.ownerId !== winner.id) {
-              s.ownerId = winner.id;
+        // Slice how many points this specific country loses this tick
+        // (Distributed roughly by power imbalance)
+        const countryFlipCount = Math.min(borderPointsIndices.length, Math.ceil(flipTotal / loserIds.length));
+        const toFlip = borderPointsIndices
+          .sort(() => Math.random() - 0.5)
+          .slice(0, countryFlipCount);
+
+        if (toFlip.length > 0) {
+          const pointsToMove = toFlip.map(idx => loser.points[idx]);
+          loser.points = loser.points.filter((_, idx) => !toFlip.includes(idx));
+
+          // Give these points to the closest winner in the coalition
+          pointsToMove.forEach(pt => {
+            let closestWinner: Country | null = null;
+            let minDist = Infinity;
+            
+            winnerIds.forEach(wId => {
+              const w = updatedCountries.find(c => c.id === wId);
+              if (!w) return;
+              const d = getDistance(pt, w.center);
+              if (d < minDist) {
+                minDist = d;
+                closestWinner = w;
+              }
+            });
+
+            if (closestWinner) {
+              (closestWinner as Country).points.push(pt);
             }
           });
+        }
+      });
+    });
+
+    // Check for settlement capture based on updated borders
+    updatedCountries.forEach(country => {
+      country.settlements.forEach(s => {
+        // Find if the current owner's territory still covers the settlement
+        // Or if an enemy's territory now covers it
+        let bestClaimId = s.ownerId;
+        let minClaimDist = 20; // Proximity threshold
+
+        updatedCountries.forEach(c => {
+          const distToTerritory = c.points.reduce((min, p) => Math.min(min, getDistance(p, s.coords)), Infinity);
+          if (distToTerritory < minClaimDist) {
+            bestClaimId = c.id;
+            minClaimDist = distToTerritory;
+          }
         });
-      }
+
+        if (s.ownerId !== bestClaimId) {
+          s.ownerId = bestClaimId;
+        }
+      });
     });
   }
 
