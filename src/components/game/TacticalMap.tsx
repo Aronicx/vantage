@@ -49,15 +49,16 @@ export const TacticalMap: React.FC<MapProps> = ({
         preserveAspectRatio="xMidYMid meet"
       >
         <defs>
+          {/* Main Geo Filter: Crisp Black Outlines */}
           <filter id="crisp-geo">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
+            <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="blur" />
             <feColorMatrix 
               in="blur" 
               mode="matrix" 
-              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 25 -9" 
+              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 40 -12" 
               result="crisp" 
             />
-            <feMorphology in="crisp" operator="dilate" radius="1.2" result="dilated" />
+            <feMorphology in="crisp" operator="dilate" radius="1.8" result="dilated" />
             <feComposite in="dilated" in2="crisp" operator="out" result="outline" />
             <feFlood floodColor="#000000" result="black" />
             <feComposite in="black" in2="outline" operator="in" result="blackOutline" />
@@ -68,17 +69,18 @@ export const TacticalMap: React.FC<MapProps> = ({
             </feMerge>
           </filter>
 
+          {/* Alliance Internal Borders: Subtle Grey Outlines */}
           <filter id="crisp-geo-grey">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
+            <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="blur" />
             <feColorMatrix 
               in="blur" 
               mode="matrix" 
-              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 25 -9" 
+              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 40 -12" 
               result="crisp" 
             />
-            <feMorphology in="crisp" operator="dilate" radius="0.8" result="dilated" />
+            <feMorphology in="crisp" operator="dilate" radius="1.2" result="dilated" />
             <feComposite in="dilated" in2="crisp" operator="out" result="outline" />
-            <feFlood floodColor="#334155" result="grey" />
+            <feFlood floodColor="#475569" result="grey" />
             <feComposite in="grey" in2="outline" operator="in" result="greyOutline" />
             <feComposite in="SourceGraphic" in2="crisp" operator="atop" result="mainFill" />
             <feMerge>
@@ -87,8 +89,9 @@ export const TacticalMap: React.FC<MapProps> = ({
             </feMerge>
           </filter>
           
-          <filter id="text-glow">
-            <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="blur" />
+          {/* High Contrast Label Background Filter */}
+          <filter id="label-buffer">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="3" result="blur" />
             <feFlood floodColor="white" result="flood" />
             <feComposite in="flood" in2="blur" operator="in" result="glow" />
             <feMerge>
@@ -98,32 +101,15 @@ export const TacticalMap: React.FC<MapProps> = ({
           </filter>
         </defs>
 
-        {/* Territory Rendering */}
+        {/* 1. Territory Bases & Alliance Internal Layers */}
         {allEntities.map(entity => (
           <g key={entity.id}>
             {entity.isAlliance ? (
-              <>
-                {/* Unified Alliance Block with Black Outer Border */}
-                <g filter="url(#crisp-geo)">
-                  {entity.countries.map(c => (
-                    <g key={`${c.id}-alliance-mass`} className="cursor-pointer" onClick={() => onSelectCountry(c)}>
-                      {c.points.map((p, i) => (
-                        <rect 
-                          key={`${c.id}-p-${i}`} 
-                          x={p.x - 5.5} 
-                          y={p.y - 5.5} 
-                          width={11.5} 
-                          height={11.5} 
-                          fill={entity.color} 
-                        />
-                      ))}
-                    </g>
-                  ))}
-                </g>
-                {/* Individual Countries within Alliance with Dark Grey Internal Borders */}
+              <g>
+                {/* Independent internal layers to create grey borders between members */}
                 <g filter="url(#crisp-geo-grey)">
                   {entity.countries.map(c => (
-                    <g key={`${c.id}-alliance-internal`} className="cursor-pointer" onClick={() => onSelectCountry(c)}>
+                    <g key={`${c.id}-internal`} className="cursor-pointer" onClick={() => onSelectCountry(c)}>
                       {c.points.map((p, i) => (
                         <rect 
                           key={`${c.id}-p-int-${i}`} 
@@ -137,9 +123,29 @@ export const TacticalMap: React.FC<MapProps> = ({
                     </g>
                   ))}
                 </g>
-              </>
+                {/* Outer Alliance unified shape for the black border */}
+                <g filter="url(#crisp-geo)" style={{ mixBlendMode: 'multiply', opacity: 0.1 }}>
+                  {entity.countries.map(c => (
+                    <g key={`${c.id}-mass`}>
+                      {c.points.map((p, i) => (
+                        <rect key={`${c.id}-p-mass-${i}`} x={p.x - 5.5} y={p.y - 5.5} width={11.5} height={11.5} fill={entity.color} />
+                      ))}
+                    </g>
+                  ))}
+                </g>
+                {/* Final Overlay to ensure the black border is crisp around the whole bloc */}
+                <g filter="url(#crisp-geo)" pointerEvents="none">
+                  {entity.countries.map(c => (
+                    <g key={`${c.id}-border-overlay`}>
+                      {c.points.map((p, i) => (
+                        <rect key={`${c.id}-p-ov-${i}`} x={p.x - 5.5} y={p.y - 5.5} width={11.5} height={11.5} fill="none" />
+                      ))}
+                    </g>
+                  ))}
+                </g>
+              </g>
             ) : (
-              /* Independent Country with Black Border */
+              /* Independent Country Layer */
               <g filter="url(#crisp-geo)">
                 {entity.countries.map(c => (
                   <g key={c.id} className="cursor-pointer" onClick={() => onSelectCountry(c)}>
@@ -160,70 +166,53 @@ export const TacticalMap: React.FC<MapProps> = ({
           </g>
         ))}
 
-        {/* Internal Province Boundaries (Very Subtle) */}
-        <g opacity="0.05" className="pointer-events-none">
-          {countries.map(c => (
-            c.provinces.map((prov, pidx) => (
-              prov.points.map((p, i) => (
-                <rect 
-                  key={`${c.id}-prov-${pidx}-${i}`} 
-                  x={p.x - 5} 
-                  y={p.y - 5} 
-                  width={10} 
-                  height={10} 
-                  fill="none" 
-                  stroke="black"
-                  strokeWidth="0.2"
-                />
-              ))
-            ))
-          ))}
-        </g>
-
-        {/* Active Selection Indicator */}
+        {/* 2. Active Selection Layer */}
         {selection.map(id => {
           const c = countries.find(curr => curr.id === id);
           if (!c) return null;
           return (
-            <g key={`selection-${id}`} className="pointer-events-none">
+            <g key={`selection-${id}`} className="pointer-events-none" filter="url(#crisp-geo)">
               {c.points.map((p, i) => (
                 <rect 
                   key={`sel-p-${i}`} 
-                  x={p.x - 6} 
-                  y={p.y - 6} 
-                  width={12} 
-                  height={12} 
-                  fill="none" 
+                  x={p.x - 6.5} 
+                  y={p.y - 6.5} 
+                  width={13} 
+                  height={13} 
+                  fill="white" 
+                  fillOpacity="0.3"
                   stroke="white" 
-                  strokeWidth="2"
-                  strokeOpacity="0.8"
+                  strokeWidth="3"
                 />
               ))}
             </g>
           );
         })}
 
-        {/* Labels: Capitals & Country Names Only */}
+        {/* 3. Labels & Markers (Topmost layer with Buffer) */}
         {countries.map(c => {
           const capital = c.settlements.find(s => s.type === 'capital');
           if (!capital) return null;
 
           return (
             <g key={`${c.id}-labels`} className="pointer-events-none">
+              {/* Capital Marker */}
               <circle 
                 cx={capital.coords.x} 
                 cy={capital.coords.y} 
-                r={3.5} 
+                r={4} 
                 fill="black"
                 stroke="white"
-                strokeWidth="1"
+                strokeWidth="1.5"
+                filter="drop-shadow(0px 1px 2px rgba(0,0,0,0.3))"
               />
+              {/* Country Name with Buffer Glow */}
               <text 
                 x={capital.coords.x} 
-                y={capital.coords.y - 12} 
+                y={capital.coords.y - 14} 
                 textAnchor="middle" 
-                className="pointer-events-none uppercase font-headline font-bold text-[9px] tracking-[0.2em] fill-black"
-                filter="url(#text-glow)"
+                className="uppercase font-headline font-bold text-[10px] tracking-[0.25em] fill-black"
+                filter="url(#label-buffer)"
               >
                 {c.name}
               </text>
