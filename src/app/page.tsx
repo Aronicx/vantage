@@ -9,6 +9,7 @@ import {
   executeAllianceWar, 
   mergeCountries,
   renameCountry,
+  splitCountry,
   GameState, 
   Country 
 } from './lib/game-logic';
@@ -31,17 +32,20 @@ import {
   Combine,
   Type,
   Pencil,
-  Check
+  Check,
+  Scissors,
+  Layers
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Slider } from '@/components/ui/slider';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
-type InteractionMode = 'none' | 'battle-menu' | 'battle-select' | 'war-menu' | 'war-select' | 'stats-panel' | 'merge-menu' | 'merge-select';
+type InteractionMode = 'none' | 'battle-menu' | 'battle-select' | 'war-menu' | 'war-select' | 'stats-panel' | 'merge-menu' | 'merge-select' | 'split-menu' | 'split-select';
 
 export default function VantagePoint() {
   const { toast } = useToast();
@@ -50,6 +54,7 @@ export default function VantagePoint() {
   const [mode, setMode] = useState<InteractionMode>('none');
   const [selection, setSelection] = useState<string[]>([]);
   const [mergeName, setMergeName] = useState('');
+  const [splitParts, setSplitParts] = useState(2);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -94,6 +99,8 @@ export default function VantagePoint() {
       } else {
         setSelection([...selection, c.id]);
       }
+    } else if (mode === 'split-select') {
+      setSelection([c.id]);
     }
   };
 
@@ -132,6 +139,17 @@ export default function VantagePoint() {
     setMergeName('');
     setMode('none');
     toast({ title: "Union Proclaimed", description: `${finalName} has been unified into a single state.` });
+  };
+
+  const handleSplit = async () => {
+    if (selection.length !== 1 || !world) return;
+    setLoading(true);
+    const nextWorld = await splitCountry(world, selection[0], splitParts);
+    setWorld(nextWorld);
+    setSelection([]);
+    setMode('none');
+    setLoading(false);
+    toast({ title: "Nation Dissolved", description: `The territory has been partitioned into ${splitParts} successor states.` });
   };
 
   const handleSaveRename = () => {
@@ -198,6 +216,13 @@ export default function VantagePoint() {
               onClick={() => { setMode('merge-menu'); setSelection([]); setMergeName(''); }}
             >
               <Combine className="h-4 w-4" /> MERGE
+            </Button>
+            <Button 
+              variant={mode === 'split-menu' || mode === 'split-select' ? "default" : "ghost"} 
+              className={cn("justify-start gap-3 h-10 text-[10px] uppercase font-bold rounded-none", (mode === 'split-menu' || mode === 'split-select') && "bg-black text-white")}
+              onClick={() => { setMode('split-menu'); setSelection([]); setSplitParts(2); }}
+            >
+              <Scissors className="h-4 w-4" /> SPLIT
             </Button>
             <Button 
               variant={mode === 'stats-panel' ? "default" : "ghost"} 
@@ -329,6 +354,63 @@ export default function VantagePoint() {
                       BACK
                     </Button>
                   </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {(mode === 'split-menu' || mode === 'split-select') && (
+            <Card className="bg-white border-black/10 rounded-none w-56 shadow-lg">
+              <CardHeader className="p-3 border-b border-black/5">
+                <CardTitle className="text-[10px] uppercase font-bold">Nation Partition</CardTitle>
+              </CardHeader>
+              <CardContent className="p-3 space-y-4">
+                <div className="space-y-1">
+                  {selection.length > 0 ? (
+                    <div className="text-[9px] font-bold uppercase truncate border-l-2 border-black pl-2">
+                      {world.countries.find(c => c.id === selection[0])?.name}
+                    </div>
+                  ) : (
+                    <p className="text-[9px] text-muted-foreground uppercase italic">Select target country</p>
+                  )}
+                </div>
+
+                {mode === 'split-select' && selection.length === 1 && (
+                  <div className="space-y-4 animate-in fade-in duration-300">
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[8px] font-bold uppercase text-muted-foreground">Number of Parts</span>
+                        <span className="text-[10px] font-bold">{splitParts}</span>
+                      </div>
+                      <Slider 
+                        value={[splitParts]}
+                        onValueChange={(val) => setSplitParts(val[0])}
+                        min={2}
+                        max={6}
+                        step={1}
+                        className="py-2"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Button 
+                        size="sm" 
+                        className="w-full h-8 text-[9px] uppercase font-bold bg-black text-white rounded-none" 
+                        disabled={loading}
+                        onClick={handleSplit}
+                      >
+                        {loading ? "PARTITIONING..." : "EXECUTE SPLIT"}
+                      </Button>
+                      <Button variant="ghost" size="sm" className="w-full h-8 text-[9px] uppercase font-bold rounded-none" onClick={() => { setMode('split-menu'); setSelection([]); }}>
+                        BACK
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {mode === 'split-menu' && (
+                  <Button size="sm" className="w-full h-8 text-[9px] uppercase font-bold bg-black text-white rounded-none" onClick={() => setMode('split-select')}>
+                    SELECT NATION
+                  </Button>
                 )}
               </CardContent>
             </Card>
