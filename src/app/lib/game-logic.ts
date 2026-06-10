@@ -418,7 +418,7 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   return { state: { ...state, countries: nextCountries }, result: resultText };
 }
 
-export function mergeCountries(state: GameState, ids: string[]): GameState {
+export function mergeCountries(state: GameState, ids: string[], customName: string): GameState {
   if (ids.length < 2) return state;
 
   const participants = state.countries.filter(c => ids.includes(c.id));
@@ -428,7 +428,7 @@ export function mergeCountries(state: GameState, ids: string[]): GameState {
   const dominant = participants[0];
 
   const mergedId = `merged-${Date.now()}`;
-  const mergedName = `Greater ${dominant.name}`;
+  const mergedName = customName.trim() || `Greater ${dominant.name}`;
   const mergedColor = dominant.color;
 
   const allPoints: Point[] = participants.flatMap(c => c.points);

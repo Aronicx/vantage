@@ -27,12 +27,14 @@ import {
   Info,
   Zap,
   Activity,
-  Combine
+  Combine,
+  Type
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
@@ -44,6 +46,7 @@ export default function VantagePoint() {
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<InteractionMode>('none');
   const [selection, setSelection] = useState<string[]>([]);
+  const [mergeName, setMergeName] = useState('');
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -117,11 +120,13 @@ export default function VantagePoint() {
 
   const handleMerge = () => {
     if (selection.length < 2 || !world) return;
-    const nextWorld = mergeCountries(world, selection);
+    const finalName = mergeName.trim() || `Union of ${selection.length} States`;
+    const nextWorld = mergeCountries(world, selection, finalName);
     setWorld(nextWorld);
     setSelection([]);
+    setMergeName('');
     setMode('none');
-    toast({ title: "Union Proclaimed", description: `Selected territories have been unified into a single state.` });
+    toast({ title: "Union Proclaimed", description: `${finalName} has been unified into a single state.` });
   };
 
   if (!world || !world.gameStarted) {
@@ -176,7 +181,7 @@ export default function VantagePoint() {
             <Button 
               variant={mode === 'merge-menu' || mode === 'merge-select' ? "default" : "ghost"} 
               className={cn("justify-start gap-3 h-10 text-[10px] uppercase font-bold rounded-none", (mode === 'merge-menu' || mode === 'merge-select') && "bg-black text-white")}
-              onClick={() => { setMode('merge-menu'); setSelection([]); }}
+              onClick={() => { setMode('merge-menu'); setSelection([]); setMergeName(''); }}
             >
               <Combine className="h-4 w-4" /> MERGE
             </Button>
@@ -263,11 +268,11 @@ export default function VantagePoint() {
           )}
 
           {(mode === 'merge-menu' || mode === 'merge-select') && (
-            <Card className="bg-white border-black/10 rounded-none w-48 shadow-lg">
+            <Card className="bg-white border-black/10 rounded-none w-56 shadow-lg">
               <CardHeader className="p-3 border-b border-black/5">
                 <CardTitle className="text-[10px] uppercase font-bold">State Unification</CardTitle>
               </CardHeader>
-              <CardContent className="p-3 space-y-3">
+              <CardContent className="p-3 space-y-4">
                 <div className="space-y-1">
                   {selection.map(id => (
                     <div key={id} className="text-[9px] font-bold uppercase truncate border-l-2 border-black pl-2">
@@ -276,16 +281,37 @@ export default function VantagePoint() {
                   ))}
                   {selection.length === 0 && <p className="text-[9px] text-muted-foreground uppercase italic">No states selected</p>}
                 </div>
+
+                {mode === 'merge-select' && selection.length >= 2 && (
+                  <div className="space-y-2 animate-in fade-in duration-300">
+                    <div className="flex items-center gap-2 px-1">
+                      <Type className="h-3 w-3 text-muted-foreground" />
+                      <span className="text-[8px] font-bold uppercase text-muted-foreground">New Nation Name</span>
+                    </div>
+                    <Input 
+                      placeholder="e.g. United Republic"
+                      className="h-8 text-[10px] rounded-none border-black/20 focus-visible:ring-black"
+                      value={mergeName}
+                      onChange={(e) => setMergeName(e.target.value)}
+                    />
+                  </div>
+                )}
+
                 {mode === 'merge-menu' ? (
                   <Button size="sm" className="w-full h-8 text-[9px] uppercase font-bold bg-black text-white rounded-none" onClick={() => setMode('merge-select')}>
                     SELECT STATES
                   </Button>
                 ) : (
                   <div className="space-y-1">
-                    <Button size="sm" className="w-full h-8 text-[9px] uppercase font-bold bg-black text-white rounded-none" disabled={selection.length < 2} onClick={handleMerge}>
+                    <Button 
+                      size="sm" 
+                      className="w-full h-8 text-[9px] uppercase font-bold bg-black text-white rounded-none" 
+                      disabled={selection.length < 2 || !mergeName.trim()} 
+                      onClick={handleMerge}
+                    >
                       UNIFY TERRITORIES
                     </Button>
-                    <Button variant="ghost" size="sm" className="w-full h-8 text-[9px] uppercase font-bold rounded-none" onClick={() => { setMode('merge-menu'); setSelection([]); }}>
+                    <Button variant="ghost" size="sm" className="w-full h-8 text-[9px] uppercase font-bold rounded-none" onClick={() => { setMode('merge-menu'); setSelection([]); setMergeName(''); }}>
                       BACK
                     </Button>
                   </div>
