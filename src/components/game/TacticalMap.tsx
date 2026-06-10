@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Country, Settlement } from '@/app/lib/game-logic';
-import { Shield, MapPin, Crosshair, Building2, Anchor } from 'lucide-react';
+import { Shield, MapPin, Building2 } from 'lucide-react';
 
 interface MapProps {
   countries: Country[];
@@ -47,24 +47,24 @@ export const TacticalMap: React.FC<MapProps> = ({
           ))}
         </g>
 
-        {/* Territory Blobs */}
+        {/* Territory Blobs - Render dynamic points */}
         {countries.map(c => (
           <g key={c.id}>
             {activeOverlays.borders && c.points.map((p, i) => (
               <circle 
-                key={i} 
+                key={`${c.id}-p-${i}`} 
                 cx={p.x} 
                 cy={p.y} 
-                r={24} 
+                r={26} // Slightly larger for better overlap coverage
                 fill={c.color} 
-                fillOpacity={hoveredCountry === c.id ? 0.15 : 0.08}
-                className="transition-all duration-300"
+                fillOpacity={hoveredCountry === c.id ? 0.18 : 0.1}
+                className="transition-all duration-700 ease-in-out" // Slower transition for "gradual" feel
               />
             ))}
           </g>
         ))}
 
-        {/* Hover/Select Area Interaction Layer */}
+        {/* Interaction layer for countries */}
         {countries.map(c => (
           <circle 
             key={`${c.id}-hitzone`}
@@ -79,85 +79,72 @@ export const TacticalMap: React.FC<MapProps> = ({
           />
         ))}
 
-        {/* Settlement Icons */}
-        {countries.map(c => (
-          <g key={`${c.id}-markers`}>
-            {c.settlements.map(s => {
-              const isHovered = hoveredCountry === c.id;
-              
-              return (
-                <g 
-                  key={s.id} 
-                  className="cursor-pointer group"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelectSettlement(s, c);
-                  }}
+        {/* Settlements */}
+        {countries.flatMap(c => c.settlements).map(s => {
+          // Find the current owner's color
+          const owner = countries.find(c => c.id === s.ownerId) || countries.find(c => c.settlements.some(cs => cs.id === s.id));
+          if (!owner) return null;
+
+          return (
+            <g 
+              key={s.id} 
+              className="cursor-pointer group"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectSettlement(s, owner);
+              }}
+            >
+              {/* Pulse effect for captured/warring areas */}
+              <circle 
+                cx={s.coords.x} 
+                cy={s.coords.y} 
+                r={s.type === 'capital' ? 18 : 12} 
+                fill={owner.color}
+                fillOpacity="0.1"
+                className="animate-pulse"
+              />
+
+              <circle 
+                cx={s.coords.x} 
+                cy={s.coords.y} 
+                r={s.type === 'capital' ? 14 : 8} 
+                fill="none" 
+                stroke={owner.color} 
+                strokeWidth="2"
+                className="transition-colors duration-500"
+              />
+
+              <g transform={`translate(${s.coords.x - 6}, ${s.coords.y - 6})`}>
+                {s.type === 'capital' && <Building2 size={12} className="text-white" strokeWidth={2.5} />}
+                {s.type === 'city' && <MapPin size={10} className="text-white/80" strokeWidth={2} />}
+                {s.type === 'outpost' && <Shield size={10} className="text-accent" strokeWidth={2} />}
+              </g>
+
+              {/* Label */}
+              <g className="opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                <rect 
+                  x={s.coords.x - 40} 
+                  y={s.coords.y - 35} 
+                  width={80} 
+                  height={18} 
+                  rx={4} 
+                  fill="black" 
+                  fillOpacity={0.9} 
+                />
+                <text 
+                  x={s.coords.x} 
+                  y={s.coords.y - 22} 
+                  textAnchor="middle" 
+                  fill="white" 
+                  fontSize="9" 
+                  className="font-headline tracking-tighter uppercase"
                 >
-                  {/* Outer Ring */}
-                  <circle 
-                    cx={s.coords.x} 
-                    cy={s.coords.y} 
-                    r={s.type === 'capital' ? 14 : 8} 
-                    fill="none" 
-                    stroke={c.color} 
-                    strokeWidth="1.5"
-                    className={s.type === 'capital' ? "animate-pulse" : ""}
-                    opacity={isHovered ? 1 : 0.5}
-                  />
-
-                  {/* Icon Representation */}
-                  <g transform={`translate(${s.coords.x - 6}, ${s.coords.y - 6})`}>
-                    {s.type === 'capital' && (
-                      <Building2 
-                        size={12} 
-                        className="text-white" 
-                        strokeWidth={2.5} 
-                      />
-                    )}
-                    {s.type === 'city' && (
-                      <MapPin 
-                        size={10} 
-                        className="text-white/80" 
-                        strokeWidth={2} 
-                      />
-                    )}
-                    {s.type === 'outpost' && (
-                      <Shield 
-                        size={10} 
-                        className="text-accent" 
-                        strokeWidth={2} 
-                      />
-                    )}
-                  </g>
-
-                  {/* Label (Visible on Hover) */}
-                  <g className="opacity-0 group-hover:opacity-100 transition-opacity">
-                    <rect 
-                      x={s.coords.x - 40} 
-                      y={s.coords.y - 32} 
-                      width={80} 
-                      height={18} 
-                      rx={4} 
-                      fill="black" 
-                      fillOpacity={0.8} 
-                    />
-                    <text 
-                      x={s.coords.x} 
-                      y={s.coords.y - 19} 
-                      textAnchor="middle" 
-                      fill="white" 
-                      fontSize="9" 
-                      className="font-headline tracking-tighter uppercase"
-                    >
-                      {s.name}
-                    </text>
-                  </g>
-                </g>
-              );
-            })}
-          </g>
-        ))}
+                  {s.name}
+                </text>
+              </g>
+            </g>
+          );
+        })}
       </svg>
     </div>
   );

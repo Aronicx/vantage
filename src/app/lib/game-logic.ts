@@ -10,6 +10,7 @@ export interface Settlement {
   name: string;
   type: 'capital' | 'city' | 'outpost';
   coords: Point;
+  ownerId: string; // Track who currently owns the settlement
 }
 
 export interface MilitaryStats {
@@ -80,7 +81,6 @@ export async function generateNewWorld(width: number, height: number): Promise<G
   const countryCount = 6 + Math.floor(Math.random() * 3);
   const countries: Country[] = [];
   
-  // 1. Generate unique country seeds
   const countrySeeds: Point[] = [];
   for (let i = 0; i < countryCount; i++) {
     const angle = (i / countryCount) * Math.PI * 2;
@@ -91,7 +91,6 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     });
   }
 
-  // 2. Initialize countries with seeds
   countrySeeds.forEach((seed, idx) => {
     const palette = FLAG_PALETTES[idx % FLAG_PALETTES.length];
     countries.push({
@@ -117,7 +116,6 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     });
   });
 
-  // 3. Simple Voronoi territory generation via grid sampling
   const gridSize = 30;
   for (let x = 0; x < width; x += gridSize) {
     for (let y = 0; y < height; y += gridSize) {
@@ -142,7 +140,6 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     }
   }
 
-  // 4. Generate Settlements
   countries.forEach(c => {
     if (c.points.length === 0) return;
 
@@ -151,6 +148,7 @@ export async function generateNewWorld(width: number, height: number): Promise<G
       name: `Capital Prime`,
       type: 'capital',
       coords: c.center,
+      ownerId: c.id
     });
 
     const cityCount = 2 + Math.floor(Math.random() * 3);
@@ -162,6 +160,7 @@ export async function generateNewWorld(width: number, height: number): Promise<G
         name: `City ${i + 1}`,
         type: 'city',
         coords: p,
+        ownerId: c.id
       });
     }
 
@@ -173,11 +172,11 @@ export async function generateNewWorld(width: number, height: number): Promise<G
         name: `Military Outpost ${i + 1}`,
         type: 'outpost',
         coords: p,
+        ownerId: c.id
       });
     }
   });
 
-  // 5. Generate Lore and specific names via Genkit
   try {
     const worldLore = await generateGameWorldLore({
       countries: countries.map(c => ({ id: c.id, name: c.name }))
@@ -218,19 +217,17 @@ export async function generateNewWorld(width: number, height: number): Promise<G
 export function processTick(state: GameState): GameState {
   if (state.isPaused) return state;
 
-  const updatedCountries = state.countries.map(c => {
+  // 1. Growth Phase
+  let updatedCountries = state.countries.map(c => {
     const prevStats = c.stats;
     const newStats = { ...prevStats, military: { ...prevStats.military } };
     
-    // 1. Population Growth
     const popGrowth = prevStats.population * (prevStats.growthRate - 1) * 0.4;
     newStats.population += popGrowth;
 
-    // 2. Economic Growth
     const econGrowth = prevStats.economy * (prevStats.growthRate - 1);
     newStats.economy += econGrowth;
 
-    // 3. Military Reinvestment
     const milInvestment = econGrowth * 0.12; 
     newStats.military.ground += milInvestment * 0.5;
     newStats.military.air += milInvestment * 0.3;
@@ -245,6 +242,67 @@ export function processTick(state: GameState): GameState {
     return { ...c, stats: newStats };
   });
 
+  // 2. War Phase (Territory Conquest)
+  const warRelations = state.relations.filter(r => r.type === 'war');
+  if (warRelations.length > 0) {
+    warRelations.forEach(war => {
+      const [id1, id2] = war.participants;
+      const c1 = updatedCountries.find(c => c.id === id1);
+      const c2 = updatedCountries.find(c => c.id === id2);
+
+      if (!c1 || !c2 || c1.points.length === 0 || c2.points.length === 0) return;
+
+      // Calculate relative strength
+      const power1 = c1.stats.military.ground * 1.0 + c1.stats.military.air * 0.5;
+      const power2 = c2.stats.military.ground * 1.0 + c2.stats.military.air * 0.5;
+      const totalPower = power1 + power2;
+
+      // Identify border points
+      const thresholdDist = 45; // Grid size is 30, so check slightly beyond adjacent
+      
+      // We flip a fixed number of points each tick based on power difference
+      const flipCount = Math.max(1, Math.floor(Math.abs(power1 - power2) / 20));
+      const winner = power1 > power2 ? c1 : c2;
+      const loser = power1 > power2 ? c2 : c1;
+
+      // Find border points belonging to the loser
+      const borderPointsIndices: number[] = [];
+      loser.points.forEach((lp, idx) => {
+        const isNearWinner = winner.points.some(wp => getDistance(lp, wp) <= thresholdDist);
+        if (isNearWinner) {
+          borderPointsIndices.push(idx);
+        }
+      });
+
+      // Shuffle and take top flipCount
+      const toFlip = borderPointsIndices
+        .sort(() => Math.random() - 0.5)
+        .slice(0, flipCount);
+
+      if (toFlip.length > 0) {
+        // Transfer points
+        const pointsToMove = toFlip.map(idx => loser.points[idx]);
+        
+        // Update loser points
+        loser.points = loser.points.filter((_, idx) => !toFlip.includes(idx));
+        // Update winner points
+        winner.points.push(...pointsToMove);
+
+        // Check for settlement capture
+        updatedCountries.forEach(country => {
+          country.settlements.forEach(s => {
+            // A settlement is captured if its location is now surrounded by the enemy
+            // Simplification: If the winner now has a point very close to the settlement
+            const distToWinner = winner.points.reduce((min, p) => Math.min(min, getDistance(p, s.coords)), Infinity);
+            if (distToWinner < 15 && s.ownerId !== winner.id) {
+              s.ownerId = winner.id;
+            }
+          });
+        });
+      }
+    });
+  }
+
   return {
     ...state,
     countries: updatedCountries,
@@ -253,7 +311,6 @@ export function processTick(state: GameState): GameState {
 }
 
 export function setDiplomacy(state: GameState, countryId1: string, countryId2: string, type: 'war' | 'alliance' | 'neutral'): GameState {
-  // Remove existing relations between these two
   const filteredRelations = state.relations.filter(r => 
     !(r.participants.includes(countryId1) && r.participants.includes(countryId2))
   );

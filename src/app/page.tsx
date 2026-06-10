@@ -6,15 +6,12 @@ import { TacticalMap } from '@/components/game/TacticalMap';
 import { HeraldryIcon } from '@/components/game/HeraldryIcon';
 import { 
   Shield, 
-  Map as MapIcon, 
   Activity, 
-  ChevronRight, 
   Layers, 
   Crosshair, 
   Zap,
   RotateCcw,
   Globe,
-  Info,
   Users,
   TrendingUp,
   Plane,
@@ -113,7 +110,6 @@ export default function VantagePoint() {
 
   return (
     <div className="h-screen w-screen relative overflow-hidden flex font-body bg-[#0F1216]">
-      {/* Main Map UI */}
       <main className="flex-1 relative">
         {world && (
           <TacticalMap 
@@ -130,55 +126,20 @@ export default function VantagePoint() {
           />
         )}
 
-        {/* Floating Top Left Controls */}
+        {/* HUD Controls */}
         <div className="absolute top-6 left-6 flex flex-col gap-3">
           <div className="bg-black/40 backdrop-blur-md border border-white/10 p-2 rounded-lg flex flex-col gap-1">
-            <Button 
-              size="icon" 
-              variant={overlays.borders ? "default" : "ghost"} 
-              className={overlays.borders ? "bg-accent text-background" : "text-white"}
-              onClick={() => toggleOverlay('borders')}
-            >
-              <Layers className="h-4 w-4" />
-            </Button>
-            <Button 
-              size="icon" 
-              variant={overlays.military ? "default" : "ghost"} 
-              className={overlays.military ? "bg-accent text-background" : "text-white"}
-              onClick={() => toggleOverlay('military')}
-            >
-              <Shield className="h-4 w-4" />
-            </Button>
-            <Button 
-              size="icon" 
-              variant={overlays.economic ? "default" : "ghost"} 
-              className={overlays.economic ? "bg-accent text-background" : "text-white"}
-              onClick={() => toggleOverlay('economic')}
-            >
-              <Activity className="h-4 w-4" />
-            </Button>
+            <Button size="icon" variant={overlays.borders ? "default" : "ghost"} className={overlays.borders ? "bg-accent text-background" : "text-white"} onClick={() => toggleOverlay('borders')}><Layers className="h-4 w-4" /></Button>
+            <Button size="icon" variant={overlays.military ? "default" : "ghost"} className={overlays.military ? "bg-accent text-background" : "text-white"} onClick={() => toggleOverlay('military')}><Shield className="h-4 w-4" /></Button>
+            <Button size="icon" variant={overlays.economic ? "default" : "ghost"} className={overlays.economic ? "bg-accent text-background" : "text-white"} onClick={() => toggleOverlay('economic')}><Activity className="h-4 w-4" /></Button>
           </div>
           <div className="flex flex-col gap-1">
-            <Button 
-              size="icon" 
-              variant="ghost" 
-              className="bg-black/40 backdrop-blur-md border border-white/10 text-white hover:text-accent"
-              onClick={togglePause}
-            >
-              {world?.isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-            </Button>
-            <Button 
-              size="icon" 
-              variant="ghost" 
-              className="bg-black/40 backdrop-blur-md border border-white/10 text-white hover:text-accent"
-              onClick={initNewGame}
-            >
-              <RotateCcw className="h-4 w-4" />
-            </Button>
+            <Button size="icon" variant="ghost" className="bg-black/40 backdrop-blur-md border border-white/10 text-white hover:text-accent" onClick={togglePause}>{world?.isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}</Button>
+            <Button size="icon" variant="ghost" className="bg-black/40 backdrop-blur-md border border-white/10 text-white hover:text-accent" onClick={initNewGame}><RotateCcw className="h-4 w-4" /></Button>
           </div>
         </div>
 
-        {/* Game Year Display */}
+        {/* Global Status Bar */}
         <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-6 bg-black/40 backdrop-blur-md border border-white/10 px-6 py-2 rounded-full pointer-events-none z-20">
           <div className="flex flex-col items-center">
             <span className="text-[10px] text-accent uppercase font-headline">Status</span>
@@ -191,7 +152,7 @@ export default function VantagePoint() {
           </div>
         </div>
 
-        {/* Legend / Overlay Status */}
+        {/* Legend */}
         <div className="absolute bottom-6 left-6 bg-black/60 backdrop-blur-md border border-white/10 p-4 rounded-lg flex flex-col gap-2 min-w-[200px]">
           <h4 className="text-[10px] text-accent font-headline uppercase tracking-widest mb-1">Tactical Legend</h4>
           <div className="space-y-1">
@@ -206,34 +167,26 @@ export default function VantagePoint() {
             {world?.relations.some(r => r.type === 'war') && (
               <div className="flex items-center gap-3 text-xs pt-2 border-t border-white/10">
                 <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-                <span className="text-red-400 font-headline uppercase text-[10px]">Active War Zone</span>
+                <span className="text-red-400 font-headline uppercase text-[10px]">Active Frontline Combat</span>
               </div>
             )}
           </div>
         </div>
       </main>
 
-      {/* Context Sidebar */}
+      {/* Sidebar Panel */}
       <aside className="w-[420px] h-full bg-card border-l border-white/10 flex flex-col z-10 shadow-2xl overflow-hidden">
         {selectedCountry ? (
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="p-6 border-b border-white/5 bg-gradient-to-br from-primary/10 to-transparent">
               <div className="flex items-start justify-between mb-4">
-                <HeraldryIcon 
-                  colors={selectedCountry.flagColors} 
-                  pattern={selectedCountry.flagPattern} 
-                  className="w-16 h-10 rounded border border-white/20 shadow-lg"
-                />
-                <Badge variant="outline" className="text-[10px] border-accent/30 text-accent font-code">
-                  ID: {selectedCountry.id.toUpperCase()}
-                </Badge>
+                <HeraldryIcon colors={selectedCountry.flagColors} pattern={selectedCountry.flagPattern} className="w-16 h-10 rounded border border-white/20 shadow-lg" />
+                <Badge variant="outline" className="text-[10px] border-accent/30 text-accent font-code">ID: {selectedCountry.id.toUpperCase()}</Badge>
               </div>
-              <h2 className="text-2xl font-headline font-bold text-white mb-1 uppercase tracking-tight">
-                {selectedCountry.name}
-              </h2>
+              <h2 className="text-2xl font-headline font-bold text-white mb-1 uppercase tracking-tight">{selectedCountry.name}</h2>
               <p className="text-xs text-muted-foreground font-code flex items-center gap-2">
                 <Crosshair className="h-3 w-3 text-accent" />
-                SOVEREIGN STATE INTACT
+                {selectedCountry.points.length > 0 ? 'SOVEREIGN STATE INTACT' : 'GOVERNMENT IN EXILE'}
               </p>
             </div>
 
@@ -256,7 +209,6 @@ export default function VantagePoint() {
                         <span className="text-xl font-headline text-white">{selectedCountry.stats.population.toFixed(1)}M</span>
                         <span className="text-[10px] text-green-500 font-code">+{selectedCountry.stats.lastGrowth.population.toFixed(2)}</span>
                       </div>
-                      <Progress value={Math.min(100, selectedCountry.stats.population)} className="h-1 bg-white/10" />
                     </div>
                     <div className="bg-white/5 p-4 rounded-lg border border-white/5 space-y-2">
                       <div className="flex items-center gap-2 text-muted-foreground">
@@ -267,10 +219,8 @@ export default function VantagePoint() {
                         <span className="text-xl font-headline text-white">${selectedCountry.stats.economy.toFixed(0)}B</span>
                         <span className="text-[10px] text-green-500 font-code">+${selectedCountry.stats.lastGrowth.economy.toFixed(1)}</span>
                       </div>
-                      <Progress value={Math.min(100, selectedCountry.stats.economy / 10)} className="h-1 bg-white/10" />
                     </div>
                   </div>
-
                   <div className="space-y-3">
                     <div className="flex items-center gap-2 text-accent">
                       <Zap className="h-4 w-4" />
@@ -288,7 +238,6 @@ export default function VantagePoint() {
                       <span>Deployment Capability</span>
                       <span className="text-accent">{(selectedCountry.stats.military.ground + selectedCountry.stats.military.air + selectedCountry.stats.military.naval).toFixed(0)} Units</span>
                     </div>
-                    
                     <div className="space-y-4">
                       <div className="space-y-2">
                         <div className="flex justify-between text-[10px] text-white/70 uppercase">
@@ -297,7 +246,6 @@ export default function VantagePoint() {
                         </div>
                         <Progress value={Math.min(100, selectedCountry.stats.military.ground / 3)} className="h-2 bg-white/5" />
                       </div>
-
                       <div className="space-y-2">
                         <div className="flex justify-between text-[10px] text-white/70 uppercase">
                           <div className="flex items-center gap-1"><Plane className="h-3 w-3 text-blue-400" /> Air Command</div>
@@ -305,79 +253,27 @@ export default function VantagePoint() {
                         </div>
                         <Progress value={Math.min(100, selectedCountry.stats.military.air)} className="h-2 bg-white/5" />
                       </div>
-
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-[10px] text-white/70 uppercase">
-                          <div className="flex items-center gap-1"><Anchor className="h-3 w-3 text-accent" /> Naval Fleet</div>
-                          <span>{selectedCountry.stats.military.naval.toFixed(1)}k</span>
-                        </div>
-                        <Progress value={Math.min(100, selectedCountry.stats.military.naval * 2)} className="h-2 bg-white/5" />
-                      </div>
                     </div>
                   </div>
                 </TabsContent>
 
                 <TabsContent value="diplomacy" className="space-y-4">
                   <div className="mb-6 p-4 bg-accent/5 border border-accent/10 rounded-lg">
-                    <h3 className="text-xs font-headline text-accent uppercase tracking-widest mb-3 flex items-center gap-2">
-                      <Swords className="h-3.5 w-3.5" /> 
-                      Diplomatic Command Center
-                    </h3>
-                    <p className="text-[10px] text-muted-foreground mb-4 font-code">SELECT RELATIONSHIP STATUS WITH OTHER NATIONS:</p>
-                    
+                    <h3 className="text-xs font-headline text-accent uppercase tracking-widest mb-3 flex items-center gap-2"><Swords className="h-3.5 w-3.5" /> Diplomatic Hub</h3>
                     <div className="space-y-2">
                       {world?.countries.filter(c => c.id !== selectedCountry.id).map(other => {
                         const rel = getRelation(selectedCountry.id, other.id);
                         return (
-                          <div key={other.id} className="flex items-center justify-between gap-2 p-2 rounded bg-black/20 border border-white/5 group hover:border-white/10 transition-colors">
+                          <div key={other.id} className="flex items-center justify-between gap-2 p-2 rounded bg-black/20 border border-white/5">
                             <span className="text-[11px] font-headline text-white truncate max-w-[120px]">{other.name}</span>
-                            
                             <div className="flex items-center gap-1">
-                              <Button 
-                                size="sm" 
-                                variant="ghost" 
-                                className={cn(
-                                  "h-7 px-2 text-[10px] uppercase font-headline",
-                                  rel?.type === 'alliance' ? "text-green-400 bg-green-400/10" : "text-white/40 hover:text-green-400"
-                                )}
-                                onClick={() => handleSetDiplomacy(selectedCountry.id, other.id, rel?.type === 'alliance' ? 'neutral' : 'alliance')}
-                              >
-                                {rel?.type === 'alliance' ? <UserCheck className="h-3 w-3 mr-1" /> : <Handshake className="h-3 w-3 mr-1" />}
-                                Ally
-                              </Button>
-                              
-                              <Button 
-                                size="sm" 
-                                variant="ghost" 
-                                className={cn(
-                                  "h-7 px-2 text-[10px] uppercase font-headline",
-                                  rel?.type === 'war' ? "text-red-400 bg-red-400/10" : "text-white/40 hover:text-red-400"
-                                )}
-                                onClick={() => handleSetDiplomacy(selectedCountry.id, other.id, rel?.type === 'war' ? 'neutral' : 'war')}
-                              >
-                                {rel?.type === 'war' ? <EyeOff className="h-3 w-3 mr-1" /> : <Swords className="h-3 w-3 mr-1" />}
-                                War
-                              </Button>
+                              <Button size="sm" variant="ghost" className={cn("h-7 px-2 text-[10px] font-headline", rel?.type === 'alliance' ? "text-green-400 bg-green-400/10" : "text-white/40")} onClick={() => handleSetDiplomacy(selectedCountry.id, other.id, rel?.type === 'alliance' ? 'neutral' : 'alliance')}>Ally</Button>
+                              <Button size="sm" variant="ghost" className={cn("h-7 px-2 text-[10px] font-headline", rel?.type === 'war' ? "text-red-400 bg-red-400/10" : "text-white/40")} onClick={() => handleSetDiplomacy(selectedCountry.id, other.id, rel?.type === 'war' ? 'neutral' : 'war')}>War</Button>
                             </div>
                           </div>
                         );
                       })}
                     </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <h4 className="text-[10px] text-muted-foreground uppercase font-headline tracking-widest">Historical Records</h4>
-                    {selectedCountry.lore?.diplomaticRelationships.map((rel, idx) => (
-                      <div key={idx} className="bg-secondary/30 border border-white/5 p-4 rounded-lg hover:bg-secondary/50 transition-colors group">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-sm font-headline text-white group-hover:text-accent transition-colors">{rel.targetCountryName}</span>
-                          <Badge variant={rel.type === 'ally' ? 'default' : rel.type === 'enemy' ? 'destructive' : 'secondary'} className="text-[10px] uppercase">
-                            {rel.type}
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground line-clamp-2 italic leading-relaxed">{rel.description}</p>
-                      </div>
-                    ))}
                   </div>
                 </TabsContent>
               </Tabs>
@@ -385,30 +281,17 @@ export default function VantagePoint() {
           </div>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center p-10 text-center space-y-4">
-            <div className="h-20 w-20 rounded-full border-2 border-dashed border-white/10 flex items-center justify-center text-white/20">
-              <Crosshair className="h-10 w-10" />
-            </div>
+            <div className="h-20 w-20 rounded-full border-2 border-dashed border-white/10 flex items-center justify-center text-white/20"><Crosshair className="h-10 w-10" /></div>
             <div>
               <h3 className="text-lg font-headline text-white uppercase tracking-widest">Awaiting Command</h3>
-              <p className="text-sm text-muted-foreground max-w-xs mx-auto leading-relaxed">
-                Select a territory on the tactical map to begin real-time intelligence analysis.
-              </p>
+              <p className="text-sm text-muted-foreground max-w-xs mx-auto leading-relaxed">Select a territory on the tactical map to begin real-time intelligence analysis.</p>
             </div>
           </div>
         )}
-
         <div className="p-4 bg-background/80 border-t border-white/5 flex items-center justify-between text-[10px] text-muted-foreground font-code">
-          <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1"><div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" /> SYSTEM ONLINE</span>
-            <span>VER: 2.1.0-STABLE</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Globe className="h-3 w-3" />
-            <span>VANTAGE COMMAND</span>
-          </div>
+          <div className="flex items-center gap-4"><span>SYSTEM ONLINE</span><span>VER: 2.5.0-TACTICAL</span></div>
         </div>
       </aside>
     </div>
   );
 }
-
