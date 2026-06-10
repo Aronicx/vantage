@@ -55,6 +55,7 @@ export default function VantagePoint() {
   const [selection, setSelection] = useState<string[]>([]);
   const [mergeName, setMergeName] = useState('');
   const [splitParts, setSplitParts] = useState(2);
+  const [splitNames, setSplitNames] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -74,6 +75,19 @@ export default function VantagePoint() {
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [world?.gameStarted, world?.isPaused]);
+
+  // Sync split names array length when parts slider changes
+  useEffect(() => {
+    setSplitNames(prev => {
+      const next = [...prev];
+      if (next.length < splitParts) {
+        for (let i = next.length; i < splitParts; i++) next.push("");
+      } else {
+        return next.slice(0, splitParts);
+      }
+      return next;
+    });
+  }, [splitParts]);
 
   const initWorld = async () => {
     setLoading(true);
@@ -141,15 +155,22 @@ export default function VantagePoint() {
     toast({ title: "Union Proclaimed", description: `${finalName} has been unified into a single state.` });
   };
 
-  const handleSplit = async () => {
+  const handleSplit = () => {
     if (selection.length !== 1 || !world) return;
-    setLoading(true);
-    const nextWorld = await splitCountry(world, selection[0], splitParts);
+    
+    // Check if all names are entered
+    const allNamed = splitNames.every(n => n.trim().length > 0);
+    if (!allNamed) {
+      toast({ variant: "destructive", title: "Incomplete Data", description: "Please provide names for all successor states." });
+      return;
+    }
+
+    const nextWorld = splitCountry(world, selection[0], splitParts, splitNames);
     setWorld(nextWorld);
     setSelection([]);
+    setSplitNames([]);
     setMode('none');
-    setLoading(false);
-    toast({ title: "Nation Dissolved", description: `The territory has been partitioned into ${splitParts} successor states.` });
+    toast({ title: "Nation Partitioned", description: `The territory has been divided into ${splitParts} new sovereign entities.` });
   };
 
   const handleSaveRename = () => {
@@ -220,7 +241,7 @@ export default function VantagePoint() {
             <Button 
               variant={mode === 'split-menu' || mode === 'split-select' ? "default" : "ghost"} 
               className={cn("justify-start gap-3 h-10 text-[10px] uppercase font-bold rounded-none", (mode === 'split-menu' || mode === 'split-select') && "bg-black text-white")}
-              onClick={() => { setMode('split-menu'); setSelection([]); setSplitParts(2); }}
+              onClick={() => { setMode('split-menu'); setSelection([]); setSplitParts(2); setSplitNames(["", ""]); }}
             >
               <Scissors className="h-4 w-4" /> SPLIT
             </Button>
@@ -233,6 +254,7 @@ export default function VantagePoint() {
             </Button>
           </div>
 
+          {/* Contextual Menus */}
           {(mode === 'battle-menu' || mode === 'battle-select') && (
             <Card className="bg-white border-black/10 rounded-none w-48 shadow-lg">
               <CardHeader className="p-3 border-b border-black/5">
@@ -360,7 +382,7 @@ export default function VantagePoint() {
           )}
 
           {(mode === 'split-menu' || mode === 'split-select') && (
-            <Card className="bg-white border-black/10 rounded-none w-56 shadow-lg">
+            <Card className="bg-white border-black/10 rounded-none w-64 shadow-lg">
               <CardHeader className="p-3 border-b border-black/5">
                 <CardTitle className="text-[10px] uppercase font-bold">Nation Partition</CardTitle>
               </CardHeader>
@@ -379,7 +401,7 @@ export default function VantagePoint() {
                   <div className="space-y-4 animate-in fade-in duration-300">
                     <div className="space-y-2">
                       <div className="flex justify-between items-center">
-                        <span className="text-[8px] font-bold uppercase text-muted-foreground">Number of Parts</span>
+                        <span className="text-[8px] font-bold uppercase text-muted-foreground">Successor States</span>
                         <span className="text-[10px] font-bold">{splitParts}</span>
                       </div>
                       <Slider 
@@ -391,16 +413,37 @@ export default function VantagePoint() {
                         className="py-2"
                       />
                     </div>
+
+                    <ScrollArea className="max-h-[200px] pr-2">
+                      <div className="space-y-3">
+                        {Array.from({ length: splitParts }).map((_, i) => (
+                          <div key={i} className="space-y-1">
+                            <label className="text-[8px] font-bold uppercase text-muted-foreground block px-1">Successor {i + 1} Name</label>
+                            <Input 
+                              placeholder={`State ${i + 1} Name`}
+                              className="h-7 text-[9px] rounded-none border-black/15 focus-visible:ring-black"
+                              value={splitNames[i] || ""}
+                              onChange={(e) => {
+                                const next = [...splitNames];
+                                next[i] = e.target.value;
+                                setSplitNames(next);
+                              }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+
                     <div className="space-y-1">
                       <Button 
                         size="sm" 
                         className="w-full h-8 text-[9px] uppercase font-bold bg-black text-white rounded-none" 
-                        disabled={loading}
+                        disabled={loading || splitNames.some(n => !n.trim())}
                         onClick={handleSplit}
                       >
                         {loading ? "PARTITIONING..." : "EXECUTE SPLIT"}
                       </Button>
-                      <Button variant="ghost" size="sm" className="w-full h-8 text-[9px] uppercase font-bold rounded-none" onClick={() => { setMode('split-menu'); setSelection([]); }}>
+                      <Button variant="ghost" size="sm" className="w-full h-8 text-[9px] uppercase font-bold rounded-none" onClick={() => { setMode('split-menu'); setSelection([]); setSplitNames([]); }}>
                         BACK
                       </Button>
                     </div>

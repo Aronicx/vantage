@@ -523,16 +523,18 @@ export function mergeCountries(state: GameState, ids: string[], customName: stri
   };
 }
 
-export async function splitCountry(state: GameState, targetId: string, parts: number): Promise<GameState> {
+export function splitCountry(state: GameState, targetId: string, parts: number, successorNames: string[]): GameState {
   const target = state.countries.find(c => c.id === targetId);
-  if (!target || parts < 2 || target.points.length < parts * 10) return state;
+  if (!target || parts < 2 || target.points.length < parts * 5) return state;
 
   const seeds: Point[] = [];
   const sourcePoints = [...target.points];
+  
+  // Distribute seeds for partition
   for (let i = 0; i < parts; i++) {
     let bestCandidate = sourcePoints[Math.floor(Math.random() * sourcePoints.length)];
     let maxMinDist = -1;
-    for (let attempt = 0; attempt < 10; attempt++) {
+    for (let attempt = 0; attempt < 15; attempt++) {
       const candidate = sourcePoints[Math.floor(Math.random() * sourcePoints.length)];
       let minDist = Infinity;
       seeds.forEach(s => {
@@ -559,21 +561,19 @@ export async function splitCountry(state: GameState, targetId: string, parts: nu
   });
 
   const nextCountries: Country[] = [];
-  const countryIds: string[] = [];
 
   for (let i = 0; i < parts; i++) {
     const points = partitionedPoints[i];
-    if (points.length < 5) continue;
+    if (points.length < 2) continue; // Skip empty partitions
     
     const id = `split-${target.id}-${i}-${Date.now()}`;
-    countryIds.push(id);
     const avgX = points.reduce((s, p) => s + p.x, 0) / points.length;
     const avgY = points.reduce((s, p) => s + p.y, 0) / points.length;
     const center = { x: avgX, y: avgY };
     
     const palette = FLAG_PALETTES[Math.floor(Math.random() * FLAG_PALETTES.length)];
     const share = points.length / target.points.length;
-    const variance = 0.9 + Math.random() * 0.2;
+    const variance = 0.95 + Math.random() * 0.1;
 
     const stats: CountryStats = {
       economy: target.stats.economy * share * variance,
@@ -587,48 +587,38 @@ export async function splitCountry(state: GameState, targetId: string, parts: nu
       }
     };
 
-    nextCountries.push({
+    const splinterName = successorNames[i]?.trim() || `Successor ${i + 1}`;
+
+    const country: Country = {
       ...target,
       id,
-      name: `Splinter State ${i + 1}`,
+      name: splinterName,
       color: POLITICAL_COLORS[Math.floor(Math.random() * POLITICAL_COLORS.length)],
       center,
       points,
-      settlements: [{ id: `${id}-cap`, name: `Provisional Capital`, type: 'capital', coords: center, ownerId: id }],
+      settlements: [{ id: `${id}-cap`, name: `${splinterName} City`, type: 'capital', coords: center, ownerId: id }],
       stats,
       allianceId: undefined,
       provinces: [] 
-    });
-  }
+    };
 
-  // Generate lore for new states
-  try {
-    const lore = await generateGameWorldLore({ countries: nextCountries.map(c => ({ id: c.id, name: c.name })) });
-    nextCountries.forEach(c => {
-      const cLore = lore.countriesLore.find(l => l.id === c.id);
-      if (cLore) {
-        c.name = cLore.name;
-        c.settlements[0].name = cLore.namingConventions.cityNamesExamples[0] || c.settlements[0].name;
-      }
-    });
-  } catch (e) { console.error("Lore failed for split", e); }
-
-  // Recalculate provinces
-  nextCountries.forEach(c => {
-    const pCount = Math.max(2, Math.floor(c.points.length / 30));
+    // Recalculate internal provinces for splinter
+    const pCount = Math.max(1, Math.floor(country.points.length / 30));
     const pSeeds: Point[] = [];
-    for(let i=0; i<pCount; i++) pSeeds.push(c.points[Math.floor(Math.random() * c.points.length)]);
-    c.provinces = pSeeds.map((s, idx) => ({ id: `${c.id}-p-${idx}`, points: [], center: s }));
-    c.points.forEach(p => {
+    for(let j=0; j<pCount; j++) pSeeds.push(country.points[Math.floor(Math.random() * country.points.length)]);
+    country.provinces = pSeeds.map((s, idx) => ({ id: `${id}-p-${idx}`, points: [], center: s }));
+    country.points.forEach(p => {
       let closestIdx = 0;
       let minDist = Infinity;
       pSeeds.forEach((ps, idx) => {
         const d = getDistance(p, ps);
         if (d < minDist) { minDist = d; closestIdx = idx; }
       });
-      c.provinces[closestIdx].points.push(p);
+      country.provinces[closestIdx].points.push(p);
     });
-  });
+
+    nextCountries.push(country);
+  }
 
   return {
     ...state,
