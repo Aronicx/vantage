@@ -34,7 +34,10 @@ import {
   Pencil,
   Check,
   Scissors,
-  Layers
+  Layers,
+  ChevronLeft,
+  ChevronRight,
+  Menu
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -44,11 +47,13 @@ import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 type InteractionMode = 'none' | 'battle-menu' | 'battle-select' | 'war-menu' | 'war-select' | 'stats-panel' | 'merge-menu' | 'merge-select' | 'split-menu' | 'split-select';
 
 export default function VantagePoint() {
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const [world, setWorld] = useState<GameState | null>(null);
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<InteractionMode>('none');
@@ -58,11 +63,19 @@ export default function VantagePoint() {
   const [splitNames, setSplitNames] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [controlsOpen, setControlsOpen] = useState(true);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     initWorld();
   }, []);
+
+  // Auto-collapse on mobile initially
+  useEffect(() => {
+    if (isMobile) {
+      setControlsOpen(false);
+    }
+  }, [isMobile]);
 
   useEffect(() => {
     if (world?.gameStarted && !world.isPaused) {
@@ -76,7 +89,6 @@ export default function VantagePoint() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [world?.gameStarted, world?.isPaused]);
 
-  // Sync split names array length when parts slider changes
   useEffect(() => {
     setSplitNames(prev => {
       const next = [...prev];
@@ -157,14 +169,11 @@ export default function VantagePoint() {
 
   const handleSplit = () => {
     if (selection.length !== 1 || !world) return;
-    
-    // Check if all names are entered
     const allNamed = splitNames.every(n => n.trim().length > 0);
     if (!allNamed) {
       toast({ variant: "destructive", title: "Incomplete Data", description: "Please provide names for all successor states." });
       return;
     }
-
     const nextWorld = splitCountry(world, selection[0], splitParts, splitNames);
     setWorld(nextWorld);
     setSelection([]);
@@ -184,15 +193,15 @@ export default function VantagePoint() {
 
   if (!world || !world.gameStarted) {
     return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-white text-black gap-8">
-        <div className="text-center space-y-4">
-          <Globe className="h-24 w-24 text-black mx-auto mb-4" />
-          <h1 className="text-6xl font-headline font-bold tracking-tighter">VANTAGE POINT</h1>
-          <p className="text-muted-foreground uppercase tracking-[0.4em] text-xs">Political Sandbox Simulation</p>
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-white text-black gap-8 p-4 text-center">
+        <div className="space-y-4">
+          <Globe className="h-16 w-16 md:h-24 md:w-24 text-black mx-auto mb-4" />
+          <h1 className="text-4xl md:text-6xl font-headline font-bold tracking-tighter">VANTAGE POINT</h1>
+          <p className="text-muted-foreground uppercase tracking-[0.4em] text-[10px] md:text-xs">Political Sandbox Simulation</p>
         </div>
         <Button 
           size="lg" 
-          className="px-16 py-8 text-xl font-headline bg-black text-white hover:bg-black/80 rounded-none transition-all" 
+          className="px-10 py-6 md:px-16 md:py-8 text-lg md:text-xl font-headline bg-black text-white hover:bg-black/80 rounded-none transition-all w-full md:w-auto" 
           onClick={handleStart} 
           disabled={loading}
         >
@@ -214,8 +223,25 @@ export default function VantagePoint() {
           />
         </div>
 
+        {/* Floating Mobile Toggle */}
+        <div className="absolute top-6 left-6 z-40">
+           <Button 
+            variant="default" 
+            size="icon" 
+            className="rounded-none bg-black text-white shadow-md border border-white/20"
+            onClick={() => setControlsOpen(!controlsOpen)}
+           >
+             {controlsOpen ? <ChevronLeft className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+           </Button>
+        </div>
+
         {/* HUD Controls */}
-        <div className="absolute top-6 left-6 flex flex-col gap-3">
+        <div 
+          className={cn(
+            "absolute top-16 left-6 flex flex-col gap-3 transition-all duration-300 z-30",
+            controlsOpen ? "translate-x-0 opacity-100" : "-translate-x-20 opacity-0 pointer-events-none"
+          )}
+        >
           <div className="bg-white/90 backdrop-blur-sm border border-black/10 p-1 flex flex-col shadow-sm">
             <Button 
               variant={mode === 'battle-menu' || mode === 'battle-select' ? "default" : "ghost"} 
@@ -460,18 +486,18 @@ export default function VantagePoint() {
           )}
         </div>
 
-        {/* Global HUD */}
-        <div className="absolute top-6 right-6 flex items-center gap-3 bg-white/90 backdrop-blur-sm border border-black/10 p-1 shadow-sm">
-          <Button size="icon" variant="ghost" className="h-8 w-8 rounded-none" onClick={() => setWorld(w => w ? {...w, isPaused: !w.isPaused} : null)}>
+        {/* Global HUD - Bottom or Top Right */}
+        <div className="absolute top-6 right-6 flex items-center gap-2 bg-white/90 backdrop-blur-sm border border-black/10 p-1 shadow-sm overflow-x-auto max-w-[calc(100vw-100px)]">
+          <Button size="icon" variant="ghost" className="h-8 w-8 rounded-none shrink-0" onClick={() => setWorld(w => w ? {...w, isPaused: !w.isPaused} : null)}>
             {world.isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
           </Button>
-          <div className="w-px h-4 bg-black/10" />
-          <div className="px-4 py-1 text-center min-w-[80px]">
+          <div className="w-px h-4 bg-black/10 shrink-0" />
+          <div className="px-2 py-1 text-center min-w-[60px] shrink-0">
              <span className="text-[8px] text-muted-foreground uppercase block font-bold leading-none mb-1">Year</span>
              <span className="text-xs font-bold leading-none">{world.gameYear}</span>
           </div>
-          <div className="w-px h-4 bg-black/10" />
-          <Button size="icon" variant="ghost" className="h-8 w-8 rounded-none" onClick={initWorld}>
+          <div className="w-px h-4 bg-black/10 shrink-0" />
+          <Button size="icon" variant="ghost" className="h-8 w-8 rounded-none shrink-0" onClick={initWorld}>
             <RotateCcw className="h-4 w-4" />
           </Button>
         </div>
@@ -479,9 +505,9 @@ export default function VantagePoint() {
 
       {/* Rankings Side Panel */}
       {mode === 'stats-panel' && (
-        <aside className="w-[400px] h-full bg-white border-l border-black/10 flex flex-col z-50 shadow-2xl animate-in slide-in-from-right duration-300">
-          <div className="p-6 border-b border-black/5 flex items-center justify-between">
-            <h2 className="text-lg font-headline font-bold uppercase tracking-widest">Global Rankings</h2>
+        <aside className="fixed inset-y-0 right-0 w-full sm:w-[400px] h-full bg-white border-l border-black/10 flex flex-col z-50 shadow-2xl animate-in slide-in-from-right duration-300">
+          <div className="p-4 md:p-6 border-b border-black/5 flex items-center justify-between">
+            <h2 className="text-base md:text-lg font-headline font-bold uppercase tracking-widest">Global Rankings</h2>
             <Button size="icon" variant="ghost" onClick={() => { setMode('none'); setEditingId(null); }} className="rounded-none"><X className="h-4 w-4" /></Button>
           </div>
           <ScrollArea className="flex-1">
@@ -492,16 +518,16 @@ export default function VantagePoint() {
                 const isEditing = editingId === c.id;
 
                 return (
-                  <div key={c.id} className="p-6 space-y-4 hover:bg-black/[0.02] transition-colors relative">
+                  <div key={c.id} className="p-4 md:p-6 space-y-4 hover:bg-black/[0.02] transition-colors relative">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3 flex-1">
-                        <span className="text-xs font-bold opacity-30">#{idx + 1}</span>
+                      <div className="flex items-center gap-3 flex-1 overflow-hidden">
+                        <span className="text-xs font-bold opacity-30 shrink-0">#{idx + 1}</span>
                         <div className="w-4 h-4 shrink-0" style={{ backgroundColor: c.color }} />
                         {isEditing ? (
-                          <div className="flex items-center gap-2 flex-1">
+                          <div className="flex items-center gap-1 flex-1">
                             <Input 
                               autoFocus
-                              className="h-7 text-xs font-bold uppercase rounded-none border-black/20 focus-visible:ring-black"
+                              className="h-7 text-[10px] md:text-xs font-bold uppercase rounded-none border-black/20 focus-visible:ring-black"
                               value={editingName}
                               onChange={(e) => setEditingName(e.target.value)}
                               onKeyDown={(e) => {
@@ -509,20 +535,17 @@ export default function VantagePoint() {
                                 if (e.key === 'Escape') setEditingId(null);
                               }}
                             />
-                            <Button size="icon" variant="ghost" className="h-7 w-7 rounded-none" onClick={handleSaveRename}>
+                            <Button size="icon" variant="ghost" className="h-7 w-7 rounded-none shrink-0" onClick={handleSaveRename}>
                               <Check className="h-3 w-3" />
-                            </Button>
-                            <Button size="icon" variant="ghost" className="h-7 w-7 rounded-none" onClick={() => setEditingId(null)}>
-                              <X className="h-3 w-3" />
                             </Button>
                           </div>
                         ) : (
-                          <div className="flex items-center gap-2 group/name">
-                            <h3 className="text-sm font-bold uppercase truncate max-w-[180px]">{c.name}</h3>
+                          <div className="flex items-center gap-2 group/name overflow-hidden">
+                            <h3 className="text-xs md:text-sm font-bold uppercase truncate max-w-[120px] md:max-w-[180px]">{c.name}</h3>
                             <Button 
                               variant="ghost" 
                               size="icon" 
-                              className="h-5 w-5 opacity-0 group-hover/name:opacity-100 transition-opacity" 
+                              className="h-5 w-5 opacity-100 md:opacity-0 md:group-hover/name:opacity-100 transition-opacity" 
                               onClick={() => {
                                 setEditingId(c.id);
                                 setEditingName(c.name);
@@ -533,41 +556,41 @@ export default function VantagePoint() {
                           </div>
                         )}
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-1 shrink-0">
                         {isRecovering && (
-                          <Badge variant="outline" className="text-[8px] uppercase font-bold border-yellow-500 text-yellow-600 rounded-none bg-yellow-50">
-                            <Activity className="h-2.5 w-2.5 mr-1" /> RECOVERING
+                          <Badge variant="outline" className="text-[7px] md:text-[8px] uppercase font-bold border-yellow-500 text-yellow-600 rounded-none bg-yellow-50 px-1">
+                            RCV
                           </Badge>
                         )}
                         {isBooming && (
-                          <Badge variant="outline" className="text-[8px] uppercase font-bold border-green-500 text-green-600 rounded-none bg-green-50">
-                            <Zap className="h-2.5 w-2.5 mr-1" /> BOOMING
+                          <Badge variant="outline" className="text-[7px] md:text-[8px] uppercase font-bold border-green-500 text-green-600 rounded-none bg-green-50 px-1">
+                            BOM
                           </Badge>
                         )}
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-x-8 gap-y-4">
+                    <div className="grid grid-cols-2 gap-x-4 md:gap-x-8 gap-y-4">
                       <div className="space-y-1">
-                        <span className="text-[9px] text-muted-foreground uppercase font-bold flex items-center gap-1"><TrendingUp className="h-2.5 w-2.5" /> Economy</span>
-                        <p className={cn("text-xs font-bold font-mono", isBooming && "text-green-600")}>${c.stats.economy.toFixed(1)}B</p>
+                        <span className="text-[8px] md:text-[9px] text-muted-foreground uppercase font-bold flex items-center gap-1"><TrendingUp className="h-2.5 w-2.5" /> Econ</span>
+                        <p className={cn("text-[10px] md:text-xs font-bold font-mono", isBooming && "text-green-600")}>${c.stats.economy.toFixed(1)}B</p>
                       </div>
                       <div className="space-y-1">
-                        <span className="text-[9px] text-muted-foreground uppercase font-bold flex items-center gap-1"><Users className="h-2.5 w-2.5" /> Population</span>
-                        <p className="text-xs font-bold font-mono">{c.stats.population.toFixed(2)}M</p>
+                        <span className="text-[8px] md:text-[9px] text-muted-foreground uppercase font-bold flex items-center gap-1"><Users className="h-2.5 w-2.5" /> Pop</span>
+                        <p className="text-[10px] md:text-xs font-bold font-mono">{c.stats.population.toFixed(2)}M</p>
                       </div>
                     </div>
-                    <div className="flex gap-6 pt-2">
+                    <div className="flex gap-4 md:gap-6 pt-2">
                       <div>
-                        <span className="text-[8px] text-muted-foreground uppercase font-bold block mb-1">GND</span>
-                        <span className="text-[10px] font-bold font-mono">{c.stats.military.ground.toFixed(0)}</span>
+                        <span className="text-[7px] md:text-[8px] text-muted-foreground uppercase font-bold block mb-1">GND</span>
+                        <span className="text-[9px] md:text-[10px] font-bold font-mono">{c.stats.military.ground.toFixed(0)}</span>
                       </div>
                       <div>
-                        <span className="text-[8px] text-muted-foreground uppercase font-bold block mb-1">AIR</span>
-                        <span className="text-[10px] font-bold font-mono">{c.stats.military.air.toFixed(0)}</span>
+                        <span className="text-[7px] md:text-[8px] text-muted-foreground uppercase font-bold block mb-1">AIR</span>
+                        <span className="text-[9px] md:text-[10px] font-bold font-mono">{c.stats.military.air.toFixed(0)}</span>
                       </div>
                       <div>
-                        <span className="text-[8px] text-muted-foreground uppercase font-bold block mb-1">NAV</span>
-                        <span className="text-[10px] font-bold font-mono">{c.stats.military.naval.toFixed(0)}</span>
+                        <span className="text-[7px] md:text-[8px] text-muted-foreground uppercase font-bold block mb-1">NAV</span>
+                        <span className="text-[9px] md:text-[10px] font-bold font-mono">{c.stats.military.naval.toFixed(0)}</span>
                       </div>
                     </div>
                   </div>
