@@ -181,6 +181,7 @@ export async function generateNewWorld(width: number, height: number): Promise<G
   const finalCountries = countries.filter(c => c.points.length > 5);
 
   finalCountries.forEach(c => {
+    // 1. Geography Detection: Identify coastal access
     let isLandlocked = true;
     for (const p of c.points) {
       const neighbors = [
@@ -196,21 +197,25 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     }
     c.stats.isLandlocked = isLandlocked;
 
+    // 2. Multipliers: Scale stats based on luck, size, and geography
     const sizeFactor = c.points.length / 50; 
     const isPowerhouse = Math.random() > 0.90;
     const luckMultiplier = isPowerhouse ? (1.5 + Math.random() * 0.8) : (0.85 + Math.random() * 0.4);
     
-    const geoEconBonus = isLandlocked ? 0.90 : 1.10;
+    // Coastal nations get trade-based economic and military tech advantages
+    const geoEconBonus = isLandlocked ? 0.90 : 1.15; 
+    const geoMilBonus = isLandlocked ? 1.00 : 1.08;
 
     c.stats.economy = (100 + sizeFactor * 400) * luckMultiplier * geoEconBonus;
     c.stats.population = (5 + sizeFactor * 30) * luckMultiplier;
     c.stats.military = {
-      ground: (40 + sizeFactor * 80) * luckMultiplier,
-      air: (10 + sizeFactor * 30) * luckMultiplier,
-      naval: isLandlocked ? (sizeFactor * 2) : (10 + sizeFactor * 40) * luckMultiplier,
+      ground: (40 + sizeFactor * 80) * luckMultiplier * geoMilBonus,
+      air: (10 + sizeFactor * 30) * luckMultiplier * geoMilBonus,
+      naval: isLandlocked ? (sizeFactor * 1) : (10 + sizeFactor * 40) * luckMultiplier * geoMilBonus,
     };
 
-    c.stats.growthRate = (isLandlocked ? 1.009 : 1.015) + (Math.random() * 0.01);
+    // 3. Growth Rates: Coastal nations have higher long-term potential due to global trade
+    c.stats.growthRate = (isLandlocked ? 1.008 : 1.014) + (Math.random() * 0.008);
 
     const provinceCount = Math.max(2, Math.floor(c.points.length / 30));
     const provinceSeeds: Point[] = [];
@@ -335,7 +340,7 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   const originalLoserEconomy = loser.stats.economy;
   const originalLoserPopulation = loser.stats.population;
 
-  // Visual era shift
+  // Visual era shift: assign fresh colors to combatants
   winner.color = getRandomColor();
   loser.color = getRandomColor();
 
