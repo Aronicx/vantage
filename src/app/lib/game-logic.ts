@@ -418,6 +418,13 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   return { state: { ...state, countries: nextCountries }, result: resultText };
 }
 
+export function renameCountry(state: GameState, id: string, newName: string): GameState {
+  return {
+    ...state,
+    countries: state.countries.map(c => c.id === id ? { ...c, name: newName } : c)
+  };
+}
+
 export function mergeCountries(state: GameState, ids: string[], customName: string): GameState {
   if (ids.length < 2) return state;
 

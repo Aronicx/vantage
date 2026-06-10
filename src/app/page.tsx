@@ -8,6 +8,7 @@ import {
   createAlliance, 
   executeAllianceWar, 
   mergeCountries,
+  renameCountry,
   GameState, 
   Country 
 } from './lib/game-logic';
@@ -28,7 +29,9 @@ import {
   Zap,
   Activity,
   Combine,
-  Type
+  Type,
+  Pencil,
+  Check
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -47,6 +50,8 @@ export default function VantagePoint() {
   const [mode, setMode] = useState<InteractionMode>('none');
   const [selection, setSelection] = useState<string[]>([]);
   const [mergeName, setMergeName] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -55,7 +60,7 @@ export default function VantagePoint() {
 
   useEffect(() => {
     if (world?.gameStarted && !world.isPaused) {
-      const interval = 30000 / (world.simulationSpeed || 1);
+      const interval = 30000; // 30 seconds per year
       timerRef.current = setInterval(() => {
         setWorld(prev => prev ? processTick(prev) : null);
       }, interval);
@@ -63,7 +68,7 @@ export default function VantagePoint() {
       if (timerRef.current) clearInterval(timerRef.current);
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [world?.gameStarted, world?.isPaused, world?.simulationSpeed]);
+  }, [world?.gameStarted, world?.isPaused]);
 
   const initWorld = async () => {
     setLoading(true);
@@ -129,6 +134,15 @@ export default function VantagePoint() {
     toast({ title: "Union Proclaimed", description: `${finalName} has been unified into a single state.` });
   };
 
+  const handleSaveRename = () => {
+    if (!world || !editingId || !editingName.trim()) return;
+    const nextWorld = renameCountry(world, editingId, editingName.trim());
+    setWorld(nextWorld);
+    setEditingId(null);
+    setEditingName('');
+    toast({ title: "Record Updated", description: "The nation has been officially renamed." });
+  };
+
   if (!world || !world.gameStarted) {
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-white text-black gap-8">
@@ -188,7 +202,7 @@ export default function VantagePoint() {
             <Button 
               variant={mode === 'stats-panel' ? "default" : "ghost"} 
               className={cn("justify-start gap-3 h-10 text-[10px] uppercase font-bold rounded-none", mode === 'stats-panel' && "bg-black text-white")}
-              onClick={() => { setMode(mode === 'stats-panel' ? 'none' : 'stats-panel'); }}
+              onClick={() => { setMode(mode === 'stats-panel' ? 'none' : 'stats-panel'); setEditingId(null); }}
             >
               <ListOrdered className="h-4 w-4" /> RANKINGS
             </Button>
@@ -343,21 +357,56 @@ export default function VantagePoint() {
         <aside className="w-[400px] h-full bg-white border-l border-black/10 flex flex-col z-50 shadow-2xl animate-in slide-in-from-right duration-300">
           <div className="p-6 border-b border-black/5 flex items-center justify-between">
             <h2 className="text-lg font-headline font-bold uppercase tracking-widest">Global Rankings</h2>
-            <Button size="icon" variant="ghost" onClick={() => setMode('none')} className="rounded-none"><X className="h-4 w-4" /></Button>
+            <Button size="icon" variant="ghost" onClick={() => { setMode('none'); setEditingId(null); }} className="rounded-none"><X className="h-4 w-4" /></Button>
           </div>
           <ScrollArea className="flex-1">
             <div className="divide-y divide-black/5">
               {[...world.countries].sort((a,b) => b.stats.economy - a.stats.economy).map((c, idx) => {
                 const isRecovering = c.recoveryEndYear && world.gameYear <= c.recoveryEndYear;
                 const isBooming = c.boomEndYear && world.gameYear <= c.boomEndYear && world.gameYear > (c.recoveryEndYear || 0);
+                const isEditing = editingId === c.id;
 
                 return (
                   <div key={c.id} className="p-6 space-y-4 hover:bg-black/[0.02] transition-colors relative">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 flex-1">
                         <span className="text-xs font-bold opacity-30">#{idx + 1}</span>
-                        <div className="w-4 h-4" style={{ backgroundColor: c.color }} />
-                        <h3 className="text-sm font-bold uppercase">{c.name}</h3>
+                        <div className="w-4 h-4 shrink-0" style={{ backgroundColor: c.color }} />
+                        {isEditing ? (
+                          <div className="flex items-center gap-2 flex-1">
+                            <Input 
+                              autoFocus
+                              className="h-7 text-xs font-bold uppercase rounded-none border-black/20 focus-visible:ring-black"
+                              value={editingName}
+                              onChange={(e) => setEditingName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveRename();
+                                if (e.key === 'Escape') setEditingId(null);
+                              }}
+                            />
+                            <Button size="icon" variant="ghost" className="h-7 w-7 rounded-none" onClick={handleSaveRename}>
+                              <Check className="h-3 w-3" />
+                            </Button>
+                            <Button size="icon" variant="ghost" className="h-7 w-7 rounded-none" onClick={() => setEditingId(null)}>
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 group/name">
+                            <h3 className="text-sm font-bold uppercase truncate max-w-[180px]">{c.name}</h3>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-5 w-5 opacity-0 group-hover/name:opacity-100 transition-opacity" 
+                              onClick={() => {
+                                setEditingId(c.id);
+                                setEditingName(c.name);
+                              }}
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        )}
                       </div>
                       <div className="flex gap-2">
                         {isRecovering && (
