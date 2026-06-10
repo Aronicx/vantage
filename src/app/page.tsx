@@ -15,7 +15,9 @@ import {
   Plus,
   X,
   Users,
-  Info
+  Info,
+  Zap,
+  Activity
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -168,7 +170,7 @@ export default function VantagePoint() {
                 <CardTitle className="text-[10px] uppercase font-bold">Battle Command</CardTitle>
               </CardHeader>
               <CardContent className="p-3 space-y-3">
-                <p className="text-[10px] text-muted-foreground leading-tight">Select two rival nations on the map to resolve border disputes.</p>
+                <p className="text-[10px] text-muted-foreground leading-tight">Select two rival nations on the map to resolve border disputes. War results in long-term economic shifts.</p>
                 <div className="space-y-1">
                   {selection.map(id => (
                     <div key={id} className="text-[9px] font-bold uppercase truncate border-l-2 border-black pl-2">
@@ -262,41 +264,58 @@ export default function VantagePoint() {
           </div>
           <ScrollArea className="flex-1">
             <div className="divide-y divide-black/5">
-              {[...world.countries].sort((a,b) => b.stats.economy - a.stats.economy).map((c, idx) => (
-                <div key={c.id} className="p-6 space-y-4 hover:bg-black/[0.02] transition-colors">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs font-bold opacity-30">#{idx + 1}</span>
-                      <div className="w-4 h-4" style={{ backgroundColor: c.color }} />
-                      <h3 className="text-sm font-bold uppercase">{c.name}</h3>
+              {[...world.countries].sort((a,b) => b.stats.economy - a.stats.economy).map((c, idx) => {
+                const isRecovering = c.recoveryEndYear && world.gameYear <= c.recoveryEndYear;
+                const isBooming = c.boomEndYear && world.gameYear <= c.boomEndYear && world.gameYear > (c.recoveryEndYear || 0);
+
+                return (
+                  <div key={c.id} className="p-6 space-y-4 hover:bg-black/[0.02] transition-colors relative">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-bold opacity-30">#{idx + 1}</span>
+                        <div className="w-4 h-4" style={{ backgroundColor: c.color }} />
+                        <h3 className="text-sm font-bold uppercase">{c.name}</h3>
+                      </div>
+                      <div className="flex gap-2">
+                        {isRecovering && (
+                          <Badge variant="outline" className="text-[8px] uppercase font-bold border-yellow-500 text-yellow-600 rounded-none bg-yellow-50">
+                            <Activity className="h-2.5 w-2.5 mr-1" /> Recovering
+                          </Badge>
+                        )}
+                        {isBooming && (
+                          <Badge variant="outline" className="text-[8px] uppercase font-bold border-green-500 text-green-600 rounded-none bg-green-50">
+                            <Zap className="h-2.5 w-2.5 mr-1" /> Economic Boom
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-4">
+                      <div className="space-y-1">
+                        <span className="text-[9px] text-muted-foreground uppercase font-bold flex items-center gap-1"><TrendingUp className="h-2.5 w-2.5" /> Economy</span>
+                        <p className={cn("text-xs font-bold font-mono", isBooming && "text-green-600")}>${c.stats.economy.toFixed(1)}B</p>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[9px] text-muted-foreground uppercase font-bold flex items-center gap-1"><Users className="h-2.5 w-2.5" /> Population</span>
+                        <p className="text-xs font-bold font-mono">{c.stats.population.toFixed(2)}M</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-6 pt-2">
+                      <div>
+                        <span className="text-[8px] text-muted-foreground uppercase font-bold block mb-1">Ground</span>
+                        <span className="text-[10px] font-bold font-mono">{c.stats.military.ground.toFixed(0)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[8px] text-muted-foreground uppercase font-bold block mb-1">Air</span>
+                        <span className="text-[10px] font-bold font-mono">{c.stats.military.air.toFixed(0)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[8px] text-muted-foreground uppercase font-bold block mb-1">Naval</span>
+                        <span className="text-[10px] font-bold font-mono">{c.stats.military.naval.toFixed(0)}</span>
+                      </div>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-x-8 gap-y-4">
-                    <div className="space-y-1">
-                      <span className="text-[9px] text-muted-foreground uppercase font-bold flex items-center gap-1"><TrendingUp className="h-2.5 w-2.5" /> Economy</span>
-                      <p className="text-xs font-bold font-mono">${c.stats.economy.toFixed(1)}B</p>
-                    </div>
-                    <div className="space-y-1">
-                      <span className="text-[9px] text-muted-foreground uppercase font-bold flex items-center gap-1"><Users className="h-2.5 w-2.5" /> Population</span>
-                      <p className="text-xs font-bold font-mono">{c.stats.population.toFixed(2)}M</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-6 pt-2">
-                    <div>
-                      <span className="text-[8px] text-muted-foreground uppercase font-bold block mb-1">Ground</span>
-                      <span className="text-[10px] font-bold font-mono">{c.stats.military.ground.toFixed(0)}</span>
-                    </div>
-                    <div>
-                      <span className="text-[8px] text-muted-foreground uppercase font-bold block mb-1">Air</span>
-                      <span className="text-[10px] font-bold font-mono">{c.stats.military.air.toFixed(0)}</span>
-                    </div>
-                    <div>
-                      <span className="text-[8px] text-muted-foreground uppercase font-bold block mb-1">Naval</span>
-                      <span className="text-[10px] font-bold font-mono">{c.stats.military.naval.toFixed(0)}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </ScrollArea>
         </aside>

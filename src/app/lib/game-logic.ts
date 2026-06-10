@@ -1,4 +1,3 @@
-
 import { generateGameWorldLore } from '@/ai/flows/generate-game-world-lore';
 
 export interface Point {
@@ -52,6 +51,8 @@ export interface Country {
   stats: CountryStats;
   allianceId?: string;
   provinces: Province[];
+  recoveryEndYear?: number;
+  boomEndYear?: number;
 }
 
 export interface GameState {
@@ -229,11 +230,23 @@ export function processTick(state: GameState): GameState {
 
   const updatedCountries = state.countries.map(c => {
     const stats = { ...c.stats };
-    stats.population *= stats.growthRate;
-    stats.economy *= stats.growthRate;
-    stats.military.ground *= (1 + (stats.growthRate - 1) * 0.4);
-    stats.military.air *= (1 + (stats.growthRate - 1) * 0.4);
-    stats.military.naval *= (1 + (stats.growthRate - 1) * 0.4);
+    let currentGrowth = stats.growthRate;
+
+    // Post-war effects
+    if (c.recoveryEndYear && state.gameYear <= c.recoveryEndYear) {
+      // Recovery phase: Slower growth
+      currentGrowth = 1 + (stats.growthRate - 1) * 0.5;
+    } else if (c.boomEndYear && state.gameYear <= c.boomEndYear) {
+      // Boom phase: Accelerated growth from integration
+      currentGrowth = 1 + (stats.growthRate - 1) * 1.5;
+    }
+
+    stats.population *= currentGrowth;
+    stats.economy *= currentGrowth;
+    stats.military.ground *= (1 + (currentGrowth - 1) * 0.4);
+    stats.military.air *= (1 + (currentGrowth - 1) * 0.4);
+    stats.military.naval *= (1 + (currentGrowth - 1) * 0.4);
+    
     return { ...c, stats };
   });
 
@@ -255,21 +268,38 @@ export function executeBattle(state: GameState, id1: string, id2: string): { sta
   const loser = power1Adjusted > power2 ? c2 : c1;
   const ratio = Math.max(power1, power2) / Math.min(power1, power2);
 
+  // War Attrition: Both sides lose resources
+  const winnerAttrition = 0.05 + (Math.random() * 0.05); // 5-10% loss
+  const loserAttrition = 0.15 + (Math.random() * 0.1); // 15-25% loss
+
+  winner.stats.economy *= (1 - winnerAttrition);
+  winner.stats.population *= (1 - winnerAttrition * 0.5);
+  winner.stats.military.ground *= (1 - winnerAttrition * 1.5);
+  winner.stats.military.air *= (1 - winnerAttrition * 1.5);
+  winner.stats.military.naval *= (1 - winnerAttrition * 1.2);
+
+  loser.stats.economy *= (1 - loserAttrition);
+  loser.stats.population *= (1 - loserAttrition * 0.5);
+  loser.stats.military.ground *= (1 - loserAttrition * 1.5);
+  loser.stats.military.air *= (1 - loserAttrition * 1.5);
+  loser.stats.military.naval *= (1 - loserAttrition * 1.2);
+
+  // Set Winner's Recovery and Boom cycles
+  winner.recoveryEndYear = state.gameYear + 5;
+  winner.boomEndYear = state.gameYear + 15;
+
   let lossPercent = 0.15;
   let resultText = 'Minor border adjustment.';
   if (ratio > 1.8) { lossPercent = 0.3; resultText = 'Significant breakthrough.'; }
   if (ratio > 3.0) { lossPercent = 0.5; resultText = 'Major offensive success.'; }
 
   const pointsToTransferCount = Math.floor(loser.points.length * lossPercent);
-  // Points taken are those closest to the winner's center
   loser.points.sort((a, b) => getDistance(a, winner.center) - getDistance(b, winner.center));
   const transferredPoints = loser.points.slice(0, pointsToTransferCount);
   
-  // Check if capital is captured
   const capital = loser.settlements.find(s => s.type === 'capital');
   const isCapitalCaptured = capital && transferredPoints.some(p => p.x === capital.coords.x && p.y === capital.coords.y);
 
-  // Update loser points
   loser.points = loser.points.filter(p => !transferredPoints.some(tp => tp.x === p.x && tp.y === p.y));
   winner.points.push(...transferredPoints);
 
@@ -291,7 +321,7 @@ export function executeBattle(state: GameState, id1: string, id2: string): { sta
         name: `Free ${loser.name}`,
         center: newCenter,
         settlements: [{ id: `${newCountryId}-cap`, name: `New Capital`, type: 'capital', coords: newCenter, ownerId: newCountryId }],
-        allianceId: undefined, // Becomes independent
+        allianceId: undefined,
         stats: {
            ...loser.stats,
            economy: loser.stats.economy * 0.5,
@@ -304,7 +334,6 @@ export function executeBattle(state: GameState, id1: string, id2: string): { sta
         }
       };
       
-      // Remove old loser, add new rump state
       nextCountries = nextCountries.filter(c => c.id !== loser.id).concat(newCountry);
     } else {
       resultText = `${loser.name} has been fully annexed by ${winner.name}.`;
@@ -315,7 +344,6 @@ export function executeBattle(state: GameState, id1: string, id2: string): { sta
     nextCountries = nextCountries.filter(c => c.id !== loser.id);
   }
 
-  // Recalculate provinces for all affected
   nextCountries = nextCountries.map(country => {
     if (country.id === winner.id || (isCapitalCaptured && country.id.startsWith('country-rump-'))) {
        const provinceCount = Math.max(2, Math.floor(country.points.length / 50));
@@ -374,7 +402,6 @@ export function executeAllianceWar(state: GameState): GameState {
 export function createAlliance(state: GameState, countryIds: string[]): GameState {
   if (countryIds.length === 0) return state;
 
-  // Find strongest member to name the alliance and set the "leader"
   const strongest = countryIds.reduce((prev, currId) => {
     const c = state.countries.find(x => x.id === currId);
     const p = c ? (c.stats.military.ground + c.stats.military.air + c.stats.military.naval) : 0;
@@ -383,7 +410,6 @@ export function createAlliance(state: GameState, countryIds: string[]): GameStat
 
   const leader = state.countries.find(c => c.id === strongest.id);
   
-  // Choose color based on existing alliances count
   const color = ['#F9C74F', '#4D908E', '#577590', '#277DA1', '#90BE6D', '#F94144'][state.alliances.length % 6];
   
   const alliance: Alliance = {
@@ -395,7 +421,7 @@ export function createAlliance(state: GameState, countryIds: string[]): GameStat
 
   const updatedCountries = state.countries.map(c => {
     if (countryIds.includes(c.id)) {
-      return { ...c, allianceId: alliance.id }; // Membership update
+      return { ...c, allianceId: alliance.id };
     }
     return c;
   });
