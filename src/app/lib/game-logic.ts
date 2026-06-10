@@ -10,7 +10,7 @@ export interface Settlement {
   name: string;
   type: 'capital' | 'city' | 'outpost';
   coords: Point;
-  ownerId: string; // Track who currently owns the settlement
+  ownerId: string;
 }
 
 export interface MilitaryStats {
@@ -20,10 +20,10 @@ export interface MilitaryStats {
 }
 
 export interface CountryStats {
-  economy: number; // GDP in billions
-  population: number; // In millions
+  economy: number;
+  population: number;
   military: MilitaryStats;
-  growthRate: number; // Base multiplier for economy/population
+  growthRate: number;
   lastGrowth: {
     economy: number;
     population: number;
@@ -37,7 +37,7 @@ export interface Country {
   color: string;
   flagColors: string[];
   flagPattern: 'stripes' | 'cross' | 'circles' | 'diagonal';
-  points: Point[]; // Boundary points for SVG representation
+  points: Point[];
   center: Point;
   settlements: Settlement[];
   stats: CountryStats;
@@ -50,7 +50,16 @@ export interface Country {
 
 export interface DiplomacyRelation {
   type: 'war' | 'alliance';
-  participants: string[]; // Country IDs
+  participants: string[];
+}
+
+export interface GameEvent {
+  id: string;
+  type: 'boom' | 'disaster' | 'breakthrough' | 'unrest';
+  title: string;
+  description: string;
+  countryId: string;
+  countryName: string;
 }
 
 export interface GameState {
@@ -59,16 +68,18 @@ export interface GameState {
   height: number;
   gameYear: number;
   isPaused: boolean;
+  simulationSpeed: number; // 1, 2, or 4
   relations: DiplomacyRelation[];
+  recentEvents: GameEvent[];
 }
 
 const FLAG_PALETTES = [
-  ['#D32F2F', '#1976D2', '#FFFFFF'], // Reds/Blues
-  ['#388E3C', '#FBC02D', '#212121'], // Greens/Yellows
-  ['#7B1FA2', '#E64A19', '#F5F5F5'], // Purples/Oranges
-  ['#0097A7', '#C2185B', '#FFFFFF'], // Cyans/Magentas
-  ['#326194', '#3DBCCF', '#0F1216'], // Command Palette
-  ['#5D4037', '#8D6E63', '#D7CCC8'], // Earthy
+  ['#D32F2F', '#1976D2', '#FFFFFF'],
+  ['#388E3C', '#FBC02D', '#212121'],
+  ['#7B1FA2', '#E64A19', '#F5F5F5'],
+  ['#0097A7', '#C2185B', '#FFFFFF'],
+  ['#326194', '#3DBCCF', '#0F1216'],
+  ['#5D4037', '#8D6E63', '#D7CCC8'],
 ];
 
 const PATTERNS: ('stripes' | 'cross' | 'circles' | 'diagonal')[] = ['stripes', 'cross', 'circles', 'diagonal'];
@@ -163,18 +174,6 @@ export async function generateNewWorld(width: number, height: number): Promise<G
         ownerId: c.id
       });
     }
-
-    const outpostCount = 1 + Math.floor(Math.random() * 2);
-    for (let i = 0; i < outpostCount; i++) {
-      const p = c.points[Math.floor(Math.random() * c.points.length)];
-      c.settlements.push({
-        id: `${c.id}-post-${i}`,
-        name: `Military Outpost ${i + 1}`,
-        type: 'outpost',
-        coords: p,
-        ownerId: c.id
-      });
-    }
   });
 
   try {
@@ -191,17 +190,15 @@ export async function generateNewWorld(width: number, height: number): Promise<G
           diplomaticRelationships: countryLore.diplomaticRelationships,
           namingConventions: countryLore.namingConventions,
         };
-
         const { cityNamesExamples } = countryLore.namingConventions;
         c.settlements.forEach((s, idx) => {
           if (s.type === 'capital') s.name = cityNamesExamples[0] || s.name;
           else if (s.type === 'city') s.name = cityNamesExamples[idx + 1] || s.name;
-          else if (s.type === 'outpost') s.name = `${cityNamesExamples[idx + 1] || 'Border'} Station`;
         });
       }
     });
   } catch (err) {
-    console.error("Lore generation failed, using defaults", err);
+    console.error("Lore generation failed", err);
   }
 
   return { 
@@ -210,13 +207,12 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     height, 
     gameYear: 2148, 
     isPaused: false,
-    relations: []
+    simulationSpeed: 1,
+    relations: [],
+    recentEvents: []
   };
 }
 
-/**
- * Finds all countries in a coalition with the given country based on active alliances.
- */
 function getCoalition(countryId: string, relations: DiplomacyRelation[]): string[] {
   const coalition = new Set<string>([countryId]);
   let added = true;
@@ -241,36 +237,52 @@ function getCoalition(countryId: string, relations: DiplomacyRelation[]): string
 export function processTick(state: GameState): GameState {
   if (state.isPaused) return state;
 
-  // 1. Growth Phase
+  const newEvents: GameEvent[] = [];
+
+  // 1. Growth Phase & Random Events
   let updatedCountries = state.countries.map(c => {
     const prevStats = c.stats;
     const newStats = { ...prevStats, military: { ...prevStats.military } };
     
+    // Base Growth
     const popGrowth = prevStats.population * (prevStats.growthRate - 1) * 0.4;
     newStats.population += popGrowth;
-
     const econGrowth = prevStats.economy * (prevStats.growthRate - 1);
     newStats.economy += econGrowth;
-
     const milInvestment = econGrowth * 0.12; 
     newStats.military.ground += milInvestment * 0.5;
     newStats.military.air += milInvestment * 0.3;
     newStats.military.naval += milInvestment * 0.2;
 
-    newStats.lastGrowth = {
-      economy: econGrowth,
-      population: popGrowth,
-      military: milInvestment
-    };
+    newStats.lastGrowth = { economy: econGrowth, population: popGrowth, military: milInvestment };
+
+    // Random Event Check (approx 2% chance per country per tick)
+    if (Math.random() < 0.02) {
+      const roll = Math.random();
+      if (roll < 0.25) {
+        newStats.economy *= 1.1;
+        newEvents.push({ id: Math.random().toString(), type: 'boom', title: 'Economic Boom', description: `${c.name} experiences unprecedented market growth.`, countryId: c.id, countryName: c.name });
+      } else if (roll < 0.5) {
+        newStats.population *= 0.95;
+        newStats.economy *= 0.95;
+        newEvents.push({ id: Math.random().toString(), type: 'disaster', title: 'Natural Disaster', description: `A massive storm devastates the coastlines of ${c.name}.`, countryId: c.id, countryName: c.name });
+      } else if (roll < 0.75) {
+        newStats.military.air *= 1.15;
+        newStats.military.ground *= 1.15;
+        newEvents.push({ id: Math.random().toString(), type: 'breakthrough', title: 'Tech Breakthrough', description: `${c.name} engineers develop superior alloy plating.`, countryId: c.id, countryName: c.name });
+      } else {
+        newStats.growthRate *= 0.99;
+        newEvents.push({ id: Math.random().toString(), type: 'unrest', title: 'Civil Unrest', description: `Protests in ${c.name} slow down national development.`, countryId: c.id, countryName: c.name });
+      }
+    }
 
     return { ...c, stats: newStats };
   });
 
-  // 2. War Phase (Alliance-Aware Territory Conquest)
+  // 2. War Phase (Alliance-Aware)
   const warRelations = state.relations.filter(r => r.type === 'war');
   if (warRelations.length > 0) {
     const processedWars = new Set<string>();
-
     warRelations.forEach(war => {
       const [id1, id2] = war.participants;
       const key = [id1, id2].sort().join('-');
@@ -280,119 +292,75 @@ export function processTick(state: GameState): GameState {
       const coalition1 = getCoalition(id1, state.relations);
       const coalition2 = getCoalition(id2, state.relations);
 
-      const calcPower = (ids: string[]) => {
-        return ids.reduce((total, id) => {
-          const c = updatedCountries.find(curr => curr.id === id);
-          if (!c) return total;
-          return total + (c.stats.military.ground * 1.0 + c.stats.military.air * 0.5);
-        }, 0);
-      };
+      const calcPower = (ids: string[]) => ids.reduce((total, id) => {
+        const c = updatedCountries.find(curr => curr.id === id);
+        return total + (c ? (c.stats.military.ground + c.stats.military.air * 0.5) : 0);
+      }, 0);
 
       const power1 = calcPower(coalition1);
       const power2 = calcPower(coalition2);
-
       const winnerIds = power1 > power2 ? coalition1 : coalition2;
       const loserIds = power1 > power2 ? coalition2 : coalition1;
-      
       const powerDiff = Math.abs(power1 - power2);
-      const flipTotal = Math.max(1, Math.floor(powerDiff / 25));
+      const flipTotal = Math.max(1, Math.floor(powerDiff / 20));
 
       loserIds.forEach(lId => {
         const loser = updatedCountries.find(c => c.id === lId);
         if (!loser || loser.points.length === 0) return;
 
         const borderPointsIndices: number[] = [];
-        const thresholdDist = 45;
-
         loser.points.forEach((lp, idx) => {
-          const isNearAnyWinner = winnerIds.some(wId => {
-            const winner = updatedCountries.find(c => c.id === wId);
-            return winner?.points.some(wp => getDistance(lp, wp) <= thresholdDist);
-          });
-          
-          if (isNearAnyWinner) {
+          if (winnerIds.some(wId => updatedCountries.find(c => c.id === wId)?.points.some(wp => getDistance(lp, wp) <= 45))) {
             borderPointsIndices.push(idx);
           }
         });
 
         const countryFlipCount = Math.min(borderPointsIndices.length, Math.ceil(flipTotal / loserIds.length));
-        const toFlip = borderPointsIndices
-          .sort(() => Math.random() - 0.5)
-          .slice(0, countryFlipCount);
-
+        const toFlip = borderPointsIndices.sort(() => Math.random() - 0.5).slice(0, countryFlipCount);
         if (toFlip.length > 0) {
           const pointsToMove = toFlip.map(idx => loser.points[idx]);
           loser.points = loser.points.filter((_, idx) => !toFlip.includes(idx));
-
           pointsToMove.forEach(pt => {
             let closestWinner: Country | null = null;
             let minDist = Infinity;
-            
             winnerIds.forEach(wId => {
               const w = updatedCountries.find(c => c.id === wId);
               if (!w) return;
               const d = getDistance(pt, w.center);
-              if (d < minDist) {
-                minDist = d;
-                closestWinner = w;
-              }
+              if (d < minDist) { minDist = d; closestWinner = w; }
             });
-
-            if (closestWinner) {
-              (closestWinner as Country).points.push(pt);
-            }
+            if (closestWinner) (closestWinner as Country).points.push(pt);
           });
         }
       });
     });
 
-    // Settlement Capture based on updated borders
     updatedCountries.forEach(country => {
       country.settlements.forEach(s => {
         let bestClaimId = s.ownerId;
         let minClaimDist = 20;
-
         updatedCountries.forEach(c => {
           const distToTerritory = c.points.reduce((min, p) => Math.min(min, getDistance(p, s.coords)), Infinity);
-          if (distToTerritory < minClaimDist) {
-            bestClaimId = c.id;
-            minClaimDist = distToTerritory;
-          }
+          if (distToTerritory < minClaimDist) { bestClaimId = c.id; minClaimDist = distToTerritory; }
         });
-
-        if (s.ownerId !== bestClaimId) {
-          s.ownerId = bestClaimId;
-        }
+        s.ownerId = bestClaimId;
       });
     });
   }
 
-  // 3. Part 6: Cleanup Conquered Nations (Territory Elimination)
+  // 3. Cleanup & Elimination
   const conqueredIds = updatedCountries.filter(c => c.points.length === 0).map(c => c.id);
-  let updatedRelations = state.relations;
-
   if (conqueredIds.length > 0) {
-    // Remove the countries that have lost all land
     updatedCountries = updatedCountries.filter(c => !conqueredIds.includes(c.id));
-    
-    // Purge diplomatic relations involving defunct nations
-    updatedRelations = state.relations.filter(r => 
-      !r.participants.some(pId => conqueredIds.includes(pId))
-    );
-
-    // Any settlements owned by defunct countries should be assigned to the current territorial holder
+    state.relations = state.relations.filter(r => !r.participants.some(pId => conqueredIds.includes(pId)));
     updatedCountries.forEach(c => {
       c.settlements.forEach(s => {
         if (conqueredIds.includes(s.ownerId)) {
-          // Find the new owner of this spot on the map
           let actualOwnerId = c.id;
           let minD = Infinity;
           updatedCountries.forEach(oc => {
             const d = oc.points.reduce((m, p) => Math.min(m, getDistance(p, s.coords)), Infinity);
-            if (d < minD) {
-              minD = d;
-              actualOwnerId = oc.id;
-            }
+            if (d < minD) { minD = d; actualOwnerId = oc.id; }
           });
           s.ownerId = actualOwnerId;
         }
@@ -404,21 +372,12 @@ export function processTick(state: GameState): GameState {
     ...state,
     countries: updatedCountries,
     gameYear: state.gameYear + 1,
-    relations: updatedRelations
+    recentEvents: newEvents,
   };
 }
 
 export function setDiplomacy(state: GameState, countryId1: string, countryId2: string, type: 'war' | 'alliance' | 'neutral'): GameState {
-  const filteredRelations = state.relations.filter(r => 
-    !(r.participants.includes(countryId1) && r.participants.includes(countryId2))
-  );
-
-  if (type === 'neutral') {
-    return { ...state, relations: filteredRelations };
-  }
-
-  return {
-    ...state,
-    relations: [...filteredRelations, { type, participants: [countryId1, countryId2] }]
-  };
+  const filteredRelations = state.relations.filter(r => !(r.participants.includes(countryId1) && r.participants.includes(countryId2)));
+  if (type === 'neutral') return { ...state, relations: filteredRelations };
+  return { ...state, relations: [...filteredRelations, { type, participants: [countryId1, countryId2] }] };
 }
