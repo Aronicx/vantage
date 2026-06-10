@@ -78,8 +78,8 @@ const FLAG_PALETTES = [
   ['#388E3C', '#FBC02D', '#212121'],
   ['#7B1FA2', '#E64A19', '#F5F5F5'],
   ['#0097A7', '#C2185B', '#FFFFFF'],
-  ['#326194', '#3DBCCF', '#0F1216'],
-  ['#5D4037', '#8D6E63', '#D7CCC8'],
+  ['#FFEB3B', '#4CAF50', '#2196F3'], // Brighter palette for map
+  ['#E91E63', '#9C27B0', '#00BCD4'],
 ];
 
 const PATTERNS: ('stripes' | 'cross' | 'circles' | 'diagonal')[] = ['stripes', 'cross', 'circles', 'diagonal'];
@@ -88,17 +88,38 @@ function getDistance(p1: Point, p2: Point): number {
   return Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
 }
 
+// Scramble letters for a more "mixed up" feel if needed, but we prefer generated lore
+function scrambleName(name: string): string {
+  const letters = name.split('');
+  if (letters.length < 4) return name;
+  const idx = Math.floor(Math.random() * (letters.length - 1));
+  [letters[idx], letters[idx+1]] = [letters[idx+1], letters[idx]];
+  return letters.join('');
+}
+
 export async function generateNewWorld(width: number, height: number): Promise<GameState> {
-  const countryCount = 6 + Math.floor(Math.random() * 3);
+  const countryCount = 12 + Math.floor(Math.random() * 5); // More countries for a packed map
   const countries: Country[] = [];
   
+  // Create a more irregular landmass using multiple centers
+  const landCenters: Point[] = [];
+  const landCenterCount = 3 + Math.floor(Math.random() * 3);
+  for(let i = 0; i < landCenterCount; i++) {
+    landCenters.push({
+      x: width * (0.3 + Math.random() * 0.4),
+      y: height * (0.3 + Math.random() * 0.4)
+    });
+  }
+
   const countrySeeds: Point[] = [];
   for (let i = 0; i < countryCount; i++) {
-    const angle = (i / countryCount) * Math.PI * 2;
-    const dist = (0.2 + Math.random() * 0.25) * Math.min(width, height);
+    // Pick a point near one of the land centers
+    const center = landCenters[Math.floor(Math.random() * landCenters.length)];
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * (width * 0.35);
     countrySeeds.push({
-      x: width / 2 + Math.cos(angle) * dist,
-      y: height / 2 + Math.sin(angle) * dist,
+      x: center.x + Math.cos(angle) * dist,
+      y: center.y + Math.sin(angle) * dist,
     });
   }
 
@@ -106,7 +127,7 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     const palette = FLAG_PALETTES[idx % FLAG_PALETTES.length];
     countries.push({
       id: `country-${idx}`,
-      name: `Sovereignty ${String.fromCharCode(65 + idx)}`,
+      name: `Nation ${String.fromCharCode(65 + idx)}`,
       color: palette[0],
       flagColors: [...palette],
       flagPattern: PATTERNS[Math.floor(Math.random() * PATTERNS.length)],
@@ -114,25 +135,27 @@ export async function generateNewWorld(width: number, height: number): Promise<G
       center: seed,
       settlements: [],
       stats: {
-        economy: 150 + Math.random() * 800,
-        population: 12 + Math.random() * 80,
+        economy: 100 + Math.random() * 500,
+        population: 5 + Math.random() * 40,
         military: {
-          ground: 60 + Math.random() * 150,
-          air: 20 + Math.random() * 60,
-          naval: 10 + Math.random() * 40,
+          ground: 40 + Math.random() * 100,
+          air: 10 + Math.random() * 40,
+          naval: 5 + Math.random() * 30,
         },
-        growthRate: 1.015 + Math.random() * 0.035,
+        growthRate: 1.01 + Math.random() * 0.03,
         lastGrowth: { economy: 0, population: 0, military: 0 }
       }
     });
   });
 
-  const gridSize = 30;
+  const gridSize = 20; // Finer grid for more detailed borders
   for (let x = 0; x < width; x += gridSize) {
     for (let y = 0; y < height; y += gridSize) {
       const p = { x, y };
-      const distToWorldCenter = getDistance(p, { x: width / 2, y: height / 2 });
-      if (distToWorldCenter > Math.min(width, height) * 0.48) continue;
+      
+      // Landmass check: point must be close enough to at least one land center
+      const isLand = landCenters.some(c => getDistance(p, c) < width * 0.38 + (Math.random() * 50));
+      if (!isLand) continue;
 
       let closestId = '';
       let minDist = Infinity;
@@ -151,24 +174,25 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     }
   }
 
-  countries.forEach(c => {
-    if (c.points.length === 0) return;
+  // Cleanup: Remove countries with no land
+  const finalCountries = countries.filter(c => c.points.length > 5);
 
+  finalCountries.forEach(c => {
     c.settlements.push({
       id: `${c.id}-cap`,
-      name: `Capital Prime`,
+      name: `Capital`,
       type: 'capital',
       coords: c.center,
       ownerId: c.id
     });
 
-    const cityCount = 2 + Math.floor(Math.random() * 3);
+    const cityCount = 1 + Math.floor(Math.random() * 3);
     for (let i = 0; i < cityCount; i++) {
       const p = c.points[Math.floor(Math.random() * c.points.length)];
-      if (getDistance(p, c.center) < 60) continue;
+      if (getDistance(p, c.center) < 40) continue;
       c.settlements.push({
         id: `${c.id}-city-${i}`,
-        name: `City ${i + 1}`,
+        name: `City`,
         type: 'city',
         coords: p,
         ownerId: c.id
@@ -178,13 +202,13 @@ export async function generateNewWorld(width: number, height: number): Promise<G
 
   try {
     const worldLore = await generateGameWorldLore({
-      countries: countries.map(c => ({ id: c.id, name: c.name }))
+      countries: finalCountries.map(c => ({ id: c.id, name: c.name }))
     });
     
-    countries.forEach(c => {
+    finalCountries.forEach(c => {
       const countryLore = worldLore.countriesLore.find(l => l.id === c.id);
       if (countryLore) {
-        c.name = countryLore.name;
+        c.name = scrambleName(countryLore.name);
         c.lore = {
           historicalNarrative: countryLore.historicalNarrative,
           diplomaticRelationships: countryLore.diplomaticRelationships,
@@ -202,10 +226,10 @@ export async function generateNewWorld(width: number, height: number): Promise<G
   }
 
   return { 
-    countries, 
+    countries: finalCountries, 
     width, 
     height, 
-    gameYear: 2148, 
+    gameYear: 2024, 
     isPaused: false,
     simulationSpeed: 1,
     relations: [],
@@ -239,47 +263,37 @@ export function processTick(state: GameState): GameState {
 
   const newEvents: GameEvent[] = [];
 
-  // 1. Growth Phase & Random Events
+  // 1. Growth Phase
   let updatedCountries = state.countries.map(c => {
     const prevStats = c.stats;
     const newStats = { ...prevStats, military: { ...prevStats.military } };
     
-    // Base Growth
     const popGrowth = prevStats.population * (prevStats.growthRate - 1) * 0.4;
     newStats.population += popGrowth;
     const econGrowth = prevStats.economy * (prevStats.growthRate - 1);
     newStats.economy += econGrowth;
-    const milInvestment = econGrowth * 0.12; 
+    const milInvestment = econGrowth * 0.1; 
     newStats.military.ground += milInvestment * 0.5;
     newStats.military.air += milInvestment * 0.3;
     newStats.military.naval += milInvestment * 0.2;
 
     newStats.lastGrowth = { economy: econGrowth, population: popGrowth, military: milInvestment };
 
-    // Random Event Check (approx 2% chance per country per tick)
-    if (Math.random() < 0.02) {
+    if (Math.random() < 0.015) {
       const roll = Math.random();
-      if (roll < 0.25) {
-        newStats.economy *= 1.1;
-        newEvents.push({ id: Math.random().toString(), type: 'boom', title: 'Economic Boom', description: `${c.name} experiences unprecedented market growth.`, countryId: c.id, countryName: c.name });
-      } else if (roll < 0.5) {
-        newStats.population *= 0.95;
-        newStats.economy *= 0.95;
-        newEvents.push({ id: Math.random().toString(), type: 'disaster', title: 'Natural Disaster', description: `A massive storm devastates the coastlines of ${c.name}.`, countryId: c.id, countryName: c.name });
-      } else if (roll < 0.75) {
-        newStats.military.air *= 1.15;
-        newStats.military.ground *= 1.15;
-        newEvents.push({ id: Math.random().toString(), type: 'breakthrough', title: 'Tech Breakthrough', description: `${c.name} engineers develop superior alloy plating.`, countryId: c.id, countryName: c.name });
-      } else {
-        newStats.growthRate *= 0.99;
-        newEvents.push({ id: Math.random().toString(), type: 'unrest', title: 'Civil Unrest', description: `Protests in ${c.name} slow down national development.`, countryId: c.id, countryName: c.name });
+      if (roll < 0.3) {
+        newStats.economy *= 1.08;
+        newEvents.push({ id: Math.random().toString(), type: 'boom', title: 'Economic Boom', description: `${c.name} markets are thriving.`, countryId: c.id, countryName: c.name });
+      } else if (roll < 0.6) {
+        newStats.population *= 0.98;
+        newEvents.push({ id: Math.random().toString(), type: 'disaster', title: 'Crisis', description: `A health crisis strikes ${c.name}.`, countryId: c.id, countryName: c.name });
       }
     }
 
     return { ...c, stats: newStats };
   });
 
-  // 2. War Phase (Alliance-Aware)
+  // 2. War Phase
   const warRelations = state.relations.filter(r => r.type === 'war');
   if (warRelations.length > 0) {
     const processedWars = new Set<string>();
@@ -294,7 +308,7 @@ export function processTick(state: GameState): GameState {
 
       const calcPower = (ids: string[]) => ids.reduce((total, id) => {
         const c = updatedCountries.find(curr => curr.id === id);
-        return total + (c ? (c.stats.military.ground + c.stats.military.air * 0.5) : 0);
+        return total + (c ? (c.stats.military.ground + c.stats.military.air * 0.6) : 0);
       }, 0);
 
       const power1 = calcPower(coalition1);
@@ -302,7 +316,7 @@ export function processTick(state: GameState): GameState {
       const winnerIds = power1 > power2 ? coalition1 : coalition2;
       const loserIds = power1 > power2 ? coalition2 : coalition1;
       const powerDiff = Math.abs(power1 - power2);
-      const flipTotal = Math.max(1, Math.floor(powerDiff / 20));
+      const flipTotal = Math.max(1, Math.floor(powerDiff / 15));
 
       loserIds.forEach(lId => {
         const loser = updatedCountries.find(c => c.id === lId);
@@ -310,7 +324,7 @@ export function processTick(state: GameState): GameState {
 
         const borderPointsIndices: number[] = [];
         loser.points.forEach((lp, idx) => {
-          if (winnerIds.some(wId => updatedCountries.find(c => c.id === wId)?.points.some(wp => getDistance(lp, wp) <= 45))) {
+          if (winnerIds.some(wId => updatedCountries.find(c => c.id === wId)?.points.some(wp => getDistance(lp, wp) <= 35))) {
             borderPointsIndices.push(idx);
           }
         });
@@ -338,7 +352,7 @@ export function processTick(state: GameState): GameState {
     updatedCountries.forEach(country => {
       country.settlements.forEach(s => {
         let bestClaimId = s.ownerId;
-        let minClaimDist = 20;
+        let minClaimDist = 25;
         updatedCountries.forEach(c => {
           const distToTerritory = c.points.reduce((min, p) => Math.min(min, getDistance(p, s.coords)), Infinity);
           if (distToTerritory < minClaimDist) { bestClaimId = c.id; minClaimDist = distToTerritory; }
@@ -348,7 +362,7 @@ export function processTick(state: GameState): GameState {
     });
   }
 
-  // 3. Cleanup & Elimination
+  // 3. Elimination
   const conqueredIds = updatedCountries.filter(c => c.points.length === 0).map(c => c.id);
   if (conqueredIds.length > 0) {
     updatedCountries = updatedCountries.filter(c => !conqueredIds.includes(c.id));
