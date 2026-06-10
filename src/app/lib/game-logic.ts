@@ -292,11 +292,9 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   const c2 = state.countries.find(c => c.id === id2);
   if (!c1 || !c2) return { state, result: 'Error' };
 
-  // Create deep clones to avoid mutation issues
   let winner = { ...JSON.parse(JSON.stringify(forcedWinnerId ? (forcedWinnerId === id1 ? c1 : c2) : (Math.random() > 0.5 ? c1 : c2))) };
   let loser = { ...JSON.parse(JSON.stringify(winner.id === id1 ? c2 : c1)) };
 
-  // Recalculate power for ratio reporting and logic
   const calculatePower = (c: Country) => {
     let p = c.stats.military.ground + c.stats.military.air + (c.stats.military.naval * 0.65);
     p += c.stats.economy * 0.12; 
@@ -314,11 +312,9 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   const originalLoserEconomy = loser.stats.economy;
   const originalLoserPopulation = loser.stats.population;
 
-  // New Era: Change Colors for participants
   winner.color = getRandomColor();
   loser.color = getRandomColor();
 
-  // Apply Stat Changes
   winner.stats.economy *= (1 - winnerAttrition);
   winner.stats.population *= (1 - winnerAttrition * 0.3);
   winner.stats.military.ground *= (1 - winnerAttrition * 1.4);
@@ -331,7 +327,6 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   loser.stats.military.air *= (1 - loserAttrition * 2.0);
   loser.stats.military.naval *= (1 - loserAttrition * 1.8);
 
-  // Looting
   const lootFactor = 0.40;
   winner.stats.economy += (originalLoserEconomy - loser.stats.economy) * lootFactor;
   winner.stats.population += (originalLoserPopulation - loser.stats.population) * lootFactor;
@@ -351,7 +346,6 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
     if (ratio > 2.8) { lossPercent = 0.50; resultText = 'Overwhelming breakthrough into enemy territory.'; }
   }
 
-  // Transfer Points
   const pointsToTransferCount = Math.floor(loser.points.length * lossPercent);
   loser.points.sort((a, b) => getDistance(a, winner.center) - getDistance(b, winner.center));
   const transferredPoints = loser.points.slice(0, pointsToTransferCount);
@@ -400,7 +394,6 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
     nextCountries = nextCountries.filter(c => c.id !== loser.id);
   }
 
-  // Re-generate provinces for affected countries
   nextCountries = nextCountries.map(country => {
     if (country.id === winner.id || country.id.startsWith('country-rump-')) {
        const provinceCount = Math.max(2, Math.floor(country.points.length / 40));
@@ -423,6 +416,88 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   });
 
   return { state: { ...state, countries: nextCountries }, result: resultText };
+}
+
+export function mergeCountries(state: GameState, ids: string[]): GameState {
+  if (ids.length < 2) return state;
+
+  const participants = state.countries.filter(c => ids.includes(c.id));
+  if (participants.length < 2) return state;
+
+  participants.sort((a, b) => (b.stats.economy + b.stats.military.ground) - (a.stats.economy + a.stats.military.ground));
+  const dominant = participants[0];
+
+  const mergedId = `merged-${Date.now()}`;
+  const mergedName = `Greater ${dominant.name}`;
+  const mergedColor = dominant.color;
+
+  const allPoints: Point[] = participants.flatMap(c => c.points);
+  const allSettlements: Settlement[] = participants.flatMap(c => c.settlements).map(s => ({ ...s, ownerId: mergedId }));
+  
+  const totalEconomy = participants.reduce((sum, c) => sum + c.stats.economy, 0);
+  const totalPopulation = participants.reduce((sum, c) => sum + c.stats.population, 0);
+  const totalGround = participants.reduce((sum, c) => sum + c.stats.military.ground, 0);
+  const totalAir = participants.reduce((sum, c) => sum + c.stats.military.air, 0);
+  const totalNaval = participants.reduce((sum, c) => sum + c.stats.military.naval, 0);
+
+  const avgX = allPoints.reduce((s, p) => s + p.x, 0) / allPoints.length;
+  const avgY = allPoints.reduce((s, p) => s + p.y, 0) / allPoints.length;
+  const mergedCenter = { x: avgX, y: avgY };
+
+  const provinceCount = Math.max(2, Math.floor(allPoints.length / 40));
+  const provinceSeeds: Point[] = [];
+  for(let i = 0; i < provinceCount; i++) {
+    provinceSeeds.push(allPoints[Math.floor(Math.random() * allPoints.length)]);
+  }
+
+  const mergedProvinces: Province[] = provinceSeeds.map((seed, idx) => ({
+    id: `${mergedId}-prov-${idx}`,
+    points: [],
+    center: seed
+  }));
+
+  allPoints.forEach(p => {
+    let closestIdx = 0;
+    let minDist = Infinity;
+    provinceSeeds.forEach((ps, idx) => {
+      const d = getDistance(p, ps);
+      if (d < minDist) { minDist = d; closestIdx = idx; }
+    });
+    mergedProvinces[closestIdx].points.push(p);
+  });
+
+  const mergedCountry: Country = {
+    ...dominant,
+    id: mergedId,
+    name: mergedName,
+    color: mergedColor,
+    points: allPoints,
+    center: mergedCenter,
+    settlements: allSettlements,
+    provinces: mergedProvinces,
+    stats: {
+      ...dominant.stats,
+      economy: totalEconomy,
+      population: totalPopulation,
+      military: {
+        ground: totalGround,
+        air: totalAir,
+        naval: totalNaval
+      }
+    },
+    allianceId: undefined,
+  };
+
+  const nextCountries = state.countries.filter(c => !ids.includes(c.id)).concat(mergedCountry);
+
+  return {
+    ...state,
+    countries: nextCountries,
+    alliances: state.alliances.map(a => ({
+      ...a,
+      countryIds: a.countryIds.filter(cid => !ids.includes(cid))
+    })).filter(a => a.countryIds.length > 0)
+  };
 }
 
 export function executeAllianceWar(state: GameState): GameState {
@@ -456,32 +531,25 @@ export function executeAllianceWar(state: GameState): GameState {
 
   let currentCountries = [...state.countries];
 
-  // Resolve battles for all countries in losing alliances
   state.alliances.forEach(a => {
     if (a.id === winningAlliance.id) return;
     
     a.countryIds.forEach(cid => {
-      // Find the loser in our working list
       const loserC = currentCountries.find(c => c.id === cid);
       if (!loserC) return;
-      
-      // Pick a random winner from the alliance to "claim" the victory for this specific country
       const receiverCid = winningAlliance.countryIds[Math.floor(Math.random() * winningAlliance.countryIds.length)];
-      
       const res = executeBattle({ ...state, countries: currentCountries }, receiverCid, loserC.id, receiverCid);
       currentCountries = res.state.countries;
     });
   });
 
-  // Final pass: ensure all participating alliance members (winners) get their color updated
-  // and remove the alliance associations (reset the board state)
   const allParticipantIds = state.alliances.flatMap(a => a.countryIds);
   const nextCountries = currentCountries.map(c => {
     if (allParticipantIds.includes(c.id)) {
       return { 
         ...c, 
         color: getRandomColor(),
-        allianceId: undefined // Break alliances after the war
+        allianceId: undefined 
       };
     }
     return c;

@@ -1,7 +1,16 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { generateNewWorld, processTick, executeBattle, createAlliance, executeAllianceWar, GameState, Country } from './lib/game-logic';
+import { 
+  generateNewWorld, 
+  processTick, 
+  executeBattle, 
+  createAlliance, 
+  executeAllianceWar, 
+  mergeCountries,
+  GameState, 
+  Country 
+} from './lib/game-logic';
 import { TacticalMap } from '@/components/game/TacticalMap';
 import { 
   Shield, 
@@ -17,7 +26,8 @@ import {
   Users,
   Info,
   Zap,
-  Activity
+  Activity,
+  Combine
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -26,7 +36,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
-type InteractionMode = 'none' | 'battle-menu' | 'battle-select' | 'war-menu' | 'war-select' | 'stats-panel';
+type InteractionMode = 'none' | 'battle-menu' | 'battle-select' | 'war-menu' | 'war-select' | 'stats-panel' | 'merge-menu' | 'merge-select';
 
 export default function VantagePoint() {
   const { toast } = useToast();
@@ -42,7 +52,6 @@ export default function VantagePoint() {
 
   useEffect(() => {
     if (world?.gameStarted && !world.isPaused) {
-      // 1 year = 30 real-world seconds
       const interval = 30000 / (world.simulationSpeed || 1);
       timerRef.current = setInterval(() => {
         setWorld(prev => prev ? processTick(prev) : null);
@@ -71,7 +80,7 @@ export default function VantagePoint() {
       } else if (selection.length < 2) {
         setSelection([...selection, c.id]);
       }
-    } else if (mode === 'war-select') {
+    } else if (mode === 'war-select' || mode === 'merge-select') {
       if (selection.includes(c.id)) {
         setSelection(selection.filter(id => id !== c.id));
       } else {
@@ -104,6 +113,15 @@ export default function VantagePoint() {
     setWorld(nextWorld); 
     setMode('none');
     toast({ title: "Global Conflict Resolved", description: "Alliances have dissolved and territories have been redistributed." });
+  };
+
+  const handleMerge = () => {
+    if (selection.length < 2 || !world) return;
+    const nextWorld = mergeCountries(world, selection);
+    setWorld(nextWorld);
+    setSelection([]);
+    setMode('none');
+    toast({ title: "Union Proclaimed", description: `Selected territories have been unified into a single state.` });
   };
 
   if (!world || !world.gameStarted) {
@@ -154,6 +172,13 @@ export default function VantagePoint() {
               onClick={() => { setMode('war-menu'); setSelection([]); }}
             >
               <Shield className="h-4 w-4" /> BLOC WAR
+            </Button>
+            <Button 
+              variant={mode === 'merge-menu' || mode === 'merge-select' ? "default" : "ghost"} 
+              className={cn("justify-start gap-3 h-10 text-[10px] uppercase font-bold rounded-none", (mode === 'merge-menu' || mode === 'merge-select') && "bg-black text-white")}
+              onClick={() => { setMode('merge-menu'); setSelection([]); }}
+            >
+              <Combine className="h-4 w-4" /> MERGE
             </Button>
             <Button 
               variant={mode === 'stats-panel' ? "default" : "ghost"} 
@@ -229,6 +254,38 @@ export default function VantagePoint() {
                       CONFIRM BLOC
                     </Button>
                     <Button variant="ghost" size="sm" className="w-full h-8 text-[9px] uppercase font-bold rounded-none" onClick={() => { setMode('war-menu'); setSelection([]); }}>
+                      BACK
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {(mode === 'merge-menu' || mode === 'merge-select') && (
+            <Card className="bg-white border-black/10 rounded-none w-48 shadow-lg">
+              <CardHeader className="p-3 border-b border-black/5">
+                <CardTitle className="text-[10px] uppercase font-bold">State Unification</CardTitle>
+              </CardHeader>
+              <CardContent className="p-3 space-y-3">
+                <div className="space-y-1">
+                  {selection.map(id => (
+                    <div key={id} className="text-[9px] font-bold uppercase truncate border-l-2 border-black pl-2">
+                      {world.countries.find(c => c.id === id)?.name}
+                    </div>
+                  ))}
+                  {selection.length === 0 && <p className="text-[9px] text-muted-foreground uppercase italic">No states selected</p>}
+                </div>
+                {mode === 'merge-menu' ? (
+                  <Button size="sm" className="w-full h-8 text-[9px] uppercase font-bold bg-black text-white rounded-none" onClick={() => setMode('merge-select')}>
+                    SELECT STATES
+                  </Button>
+                ) : (
+                  <div className="space-y-1">
+                    <Button size="sm" className="w-full h-8 text-[9px] uppercase font-bold bg-black text-white rounded-none" disabled={selection.length < 2} onClick={handleMerge}>
+                      UNIFY TERRITORIES
+                    </Button>
+                    <Button variant="ghost" size="sm" className="w-full h-8 text-[9px] uppercase font-bold rounded-none" onClick={() => { setMode('merge-menu'); setSelection([]); }}>
                       BACK
                     </Button>
                   </div>
