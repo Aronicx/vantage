@@ -90,19 +90,19 @@ export async function generateNewWorld(width: number, height: number): Promise<G
   // Create a single island by clustering land centers near the middle
   const landCenters: {p: Point, r: number}[] = [];
   const landCenterCount = 5 + Math.floor(Math.random() * 3);
-  const padding = width * 0.15; // Ensure land doesn't touch edges
+  const padding = width * 0.15;
   
   for(let i = 0; i < landCenterCount; i++) {
     landCenters.push({
       p: {
-        x: width * 0.5 + (Math.random() - 0.5) * width * 0.3, // Centered around 50%
+        x: width * 0.5 + (Math.random() - 0.5) * width * 0.3,
         y: height * 0.5 + (Math.random() - 0.5) * height * 0.3
       },
-      r: width * (0.12 + Math.random() * 0.1)
+      r: width * (0.15 + Math.random() * 0.05)
     });
   }
 
-  // Pre-calculate land grid to find valid seeds
+  // Pre-calculate land grid
   const gridSize = 10;
   const landPoints: Point[] = [];
   for (let x = padding; x < width - padding; x += gridSize) {
@@ -113,9 +113,27 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     }
   }
 
-  // Generate country seeds strictly within land area
+  // Seed countries with spacing to ensure balance
+  const seeds: Point[] = [];
   for (let i = 0; i < countryCount; i++) {
-    const seed = landPoints[Math.floor(Math.random() * landPoints.length)];
+    let bestSeed = landPoints[Math.floor(Math.random() * landPoints.length)];
+    let maxMinDist = -1;
+
+    // Try a few random points and pick the one farthest from existing seeds
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const candidate = landPoints[Math.floor(Math.random() * landPoints.length)];
+      let minDist = Infinity;
+      seeds.forEach(s => {
+        const d = getDistance(candidate, s);
+        if (d < minDist) minDist = d;
+      });
+      if (seeds.length === 0 || minDist > maxMinDist) {
+        maxMinDist = minDist;
+        bestSeed = candidate;
+      }
+    }
+    seeds.push(bestSeed);
+
     const color = POLITICAL_COLORS[i % POLITICAL_COLORS.length];
     const palette = FLAG_PALETTES[i % FLAG_PALETTES.length];
     
@@ -126,23 +144,14 @@ export async function generateNewWorld(width: number, height: number): Promise<G
       flagColors: [...palette],
       flagPattern: ['stripes', 'cross', 'diagonal', 'circles'][Math.floor(Math.random() * 4)] as any,
       points: [],
-      center: seed,
+      center: bestSeed,
       settlements: [],
       provinces: [],
-      stats: {
-        economy: 100 + Math.random() * 500,
-        population: 5 + Math.random() * 40,
-        military: {
-          ground: 40 + Math.random() * 100,
-          air: 10 + Math.random() * 40,
-          naval: 5 + Math.random() * 30,
-        },
-        growthRate: 1.01 + Math.random() * 0.02,
-      }
+      stats: { economy: 0, population: 0, military: { ground: 0, air: 0, naval: 0 }, growthRate: 1.01 + Math.random() * 0.02 }
     });
   }
 
-  // Assign land points to countries
+  // Assign land points
   landPoints.forEach(p => {
     let closestId = '';
     let minDist = Infinity;
@@ -155,10 +164,27 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     }
   });
 
-  const finalCountries = countries.filter(c => c.points.length > 5);
+  // Filter out extremely tiny countries and reassign points if necessary (simplified: just filter)
+  const finalCountries = countries.filter(c => c.points.length > 8);
 
   finalCountries.forEach(c => {
-    // Generate internal provinces
+    // Balanced Stats based on Size
+    const sizeFactor = c.points.length / 50; // Normalize size
+    
+    // Efficiency/Luck factor: Some small countries are high-tech/dense
+    // Small chance for a "Powerhouse" outlier
+    const isPowerhouse = Math.random() > 0.85;
+    const luckMultiplier = isPowerhouse ? (1.5 + Math.random()) : (0.8 + Math.random() * 0.4);
+
+    c.stats.economy = (100 + sizeFactor * 400) * luckMultiplier;
+    c.stats.population = (5 + sizeFactor * 30) * luckMultiplier;
+    c.stats.military = {
+      ground: (40 + sizeFactor * 80) * luckMultiplier,
+      air: (10 + sizeFactor * 30) * luckMultiplier,
+      naval: (5 + sizeFactor * 25) * luckMultiplier,
+    };
+
+    // Internal provinces
     const provinceCount = 2 + Math.floor(Math.random() * 3);
     const provinceSeeds: Point[] = [];
     for(let i=0; i<provinceCount; i++) {
@@ -179,10 +205,8 @@ export async function generateNewWorld(width: number, height: number): Promise<G
       c.provinces[closestIdx].points.push(p);
     });
 
-    // Capital
+    // Settlements
     c.settlements.push({ id: `${c.id}-cap`, name: `Capital`, type: 'capital', coords: c.center, ownerId: c.id });
-    
-    // Cities and Outposts
     const settlementCount = 1 + Math.floor(Math.random() * 3);
     for (let i = 0; i < settlementCount; i++) {
       const randomPoint = c.points[Math.floor(Math.random() * c.points.length)];
@@ -196,6 +220,7 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     }
   });
 
+  // Generate Lore
   try {
     const worldLore = await generateGameWorldLore({ countries: finalCountries.map(c => ({ id: c.id, name: c.name })) });
     finalCountries.forEach(c => {
@@ -247,14 +272,18 @@ export function executeBattle(state: GameState, id1: string, id2: string): { sta
   const power1 = c1.stats.military.ground + c1.stats.military.air + (c1.stats.military.naval * 0.5);
   const power2 = c2.stats.military.ground + c2.stats.military.air + (c2.stats.military.naval * 0.5);
 
-  const winner = power1 > power2 ? c1 : c2;
-  const loser = power1 > power2 ? c2 : c1;
+  // Strength based outcome with slight randomness
+  const variability = 0.8 + Math.random() * 0.4;
+  const power1Adjusted = power1 * variability;
+  
+  const winner = power1Adjusted > power2 ? c1 : c2;
+  const loser = power1Adjusted > power2 ? c2 : c1;
   const ratio = Math.max(power1, power2) / Math.min(power1, power2);
 
   let lossPercent = 0.15;
   let resultText = 'Minor territory redistribution following border engagement.';
-  if (ratio > 2) { lossPercent = 0.3; resultText = 'Significant breakthrough leads to territorial gain.'; }
-  if (ratio > 4) { lossPercent = 0.55; resultText = 'Decisive victory: Major sectors annexed.'; }
+  if (ratio > 1.8) { lossPercent = 0.3; resultText = 'Significant breakthrough leads to territorial gain.'; }
+  if (ratio > 3.5) { lossPercent = 0.55; resultText = 'Decisive victory: Major sectors annexed.'; }
 
   const pointsToTransferCount = Math.floor(loser.points.length * lossPercent);
   loser.points.sort((a, b) => getDistance(a, winner.center) - getDistance(b, winner.center));
