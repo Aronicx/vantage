@@ -1,10 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { Country, Settlement, Point } from '@/app/lib/game-logic';
-import { HeraldryIcon } from './HeraldryIcon';
-import { MapPin, Shield, Building2, Radio } from 'lucide-react';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import React, { useState } from 'react';
+import { Country, Settlement } from '@/app/lib/game-logic';
+import { Shield, MapPin, Crosshair, Building2, Anchor } from 'lucide-react';
 
 interface MapProps {
   countries: Country[];
@@ -25,165 +23,142 @@ export const TacticalMap: React.FC<MapProps> = ({
 }) => {
   const [hoveredCountry, setHoveredCountry] = useState<string | null>(null);
 
-  // Simple Voronoi is too complex for this prompt's scope without libraries, 
-  // so we use a cluster-based visual representation of territories.
-  // In a real game, D3-voronoi or similar would be used for crisp borders.
-  
   return (
-    <div className="relative w-full h-full bg-background overflow-hidden select-none map-container">
+    <div className="relative w-full h-full bg-[#0a0c10] overflow-hidden select-none map-container">
       <svg 
         viewBox="0 0 1000 1000" 
         className="w-full h-full"
         preserveAspectRatio="xMidYMid slice"
       >
-        {/* Defenitions for glow effects */}
         <defs>
-          <filter id="glow">
-            <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
-            <feMerge>
-              <feMergeNode in="coloredBlur"/>
-              <feMergeNode in="SourceGraphic"/>
-            </feMerge>
+          <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feComposite in="SourceGraphic" in2="blur" operator="over" />
           </filter>
         </defs>
 
-        {/* Ocean Graticule */}
-        <g stroke="rgba(61, 188, 207, 0.05)" strokeWidth="1">
-          {Array.from({ length: 20 }).map((_, i) => (
+        {/* Global Grid Overlay */}
+        <g stroke="rgba(255, 255, 255, 0.03)" strokeWidth="0.5">
+          {Array.from({ length: 40 }).map((_, i) => (
             <React.Fragment key={i}>
-              <line x1={i * 50} y1="0" x2={i * 50} y2="1000" />
-              <line x1="0" y1={i * 50} x2="1000" y2={i * 50} />
+              <line x1={i * 25} y1="0" x2={i * 25} y2="1000" />
+              <line x1="0" y1={i * 25} x2="1000" y2={i * 25} />
             </React.Fragment>
           ))}
         </g>
 
-        {/* Territories */}
+        {/* Territory Blobs */}
         {countries.map(c => (
-          <g key={c.id} className="transition-all duration-500">
-            {activeOverlays.borders && (
-              <g>
-                {c.points.map((p, i) => (
-                  <circle 
-                    key={i} 
-                    cx={p.x} 
-                    cy={p.y} 
-                    r={hoveredCountry === c.id ? 25 : 20} 
-                    fill={c.color} 
-                    fillOpacity={hoveredCountry === c.id ? 0.2 : 0.1}
-                    className="transition-all duration-300"
-                  />
-                ))}
-              </g>
-            )}
-
-            {/* Military Influence Overlay */}
-            {activeOverlays.military && c.settlements.filter(s => s.type === 'outpost').map(s => (
+          <g key={c.id}>
+            {activeOverlays.borders && c.points.map((p, i) => (
               <circle 
-                key={`${s.id}-reach`}
-                cx={s.coords.x}
-                cy={s.coords.y}
-                r="80"
-                fill="none"
-                stroke={c.color}
-                strokeWidth="1"
-                strokeDasharray="4 4"
-                className="animate-pulse-border"
-                opacity="0.4"
+                key={i} 
+                cx={p.x} 
+                cy={p.y} 
+                r={24} 
+                fill={c.color} 
+                fillOpacity={hoveredCountry === c.id ? 0.15 : 0.08}
+                className="transition-all duration-300"
               />
             ))}
-
-            {/* Tactical Connections */}
-            {activeOverlays.economic && (
-              <g opacity="0.3">
-                {c.settlements.slice(1).map((s, idx) => (
-                  <line 
-                    key={`${s.id}-conn`}
-                    x1={c.center.x}
-                    y1={c.center.y}
-                    x2={s.coords.x}
-                    y2={s.coords.y}
-                    stroke={c.color}
-                    strokeWidth="1"
-                  />
-                ))}
-              </g>
-            )}
           </g>
         ))}
 
-        {/* Interactive Country Layer (Area Detection) */}
+        {/* Hover/Select Area Interaction Layer */}
         {countries.map(c => (
           <circle 
-            key={`${c.id}-area`}
+            key={`${c.id}-hitzone`}
             cx={c.center.x}
             cy={c.center.y}
-            r="120"
+            r="150"
             fill="transparent"
+            className="cursor-pointer"
             onMouseEnter={() => setHoveredCountry(c.id)}
             onMouseLeave={() => setHoveredCountry(null)}
             onClick={() => onSelectCountry(c)}
-            className="cursor-pointer"
           />
         ))}
 
-        {/* Settlements Layer */}
+        {/* Settlement Icons */}
         {countries.map(c => (
-          <g key={`${c.id}-settlements`}>
-            {c.settlements.map(s => (
-              <g 
-                key={s.id} 
-                className="cursor-pointer group"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelectSettlement(s, c);
-                }}
-              >
-                <circle 
-                  cx={s.coords.x} 
-                  cy={s.coords.y} 
-                  r="6" 
-                  fill={s.type === 'capital' ? '#FFFFFF' : c.color} 
-                  className="transition-transform group-hover:scale-150"
-                  filter="url(#glow)"
-                />
-                <circle 
-                  cx={s.coords.x} 
-                  cy={s.coords.y} 
-                  r="12" 
-                  fill="none" 
-                  stroke={c.color} 
-                  strokeWidth="1"
-                  className="animate-ping"
-                  style={{ animationDuration: '3s' }}
-                />
-                <text 
-                  x={s.coords.x} 
-                  y={s.coords.y + 20} 
-                  textAnchor="middle" 
-                  fill="#FFFFFF" 
-                  fontSize="10" 
-                  className="font-headline pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
+          <g key={`${c.id}-markers`}>
+            {c.settlements.map(s => {
+              const isHovered = hoveredCountry === c.id;
+              
+              return (
+                <g 
+                  key={s.id} 
+                  className="cursor-pointer group"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectSettlement(s, c);
+                  }}
                 >
-                  {s.name.toUpperCase()}
-                </text>
-              </g>
-            ))}
+                  {/* Outer Ring */}
+                  <circle 
+                    cx={s.coords.x} 
+                    cy={s.coords.y} 
+                    r={s.type === 'capital' ? 14 : 8} 
+                    fill="none" 
+                    stroke={c.color} 
+                    strokeWidth="1.5"
+                    className={s.type === 'capital' ? "animate-pulse" : ""}
+                    opacity={isHovered ? 1 : 0.5}
+                  />
+
+                  {/* Icon Representation */}
+                  <g transform={`translate(${s.coords.x - 6}, ${s.coords.y - 6})`}>
+                    {s.type === 'capital' && (
+                      <Building2 
+                        size={12} 
+                        className="text-white" 
+                        strokeWidth={2.5} 
+                      />
+                    )}
+                    {s.type === 'city' && (
+                      <MapPin 
+                        size={10} 
+                        className="text-white/80" 
+                        strokeWidth={2} 
+                      />
+                    )}
+                    {s.type === 'outpost' && (
+                      <Shield 
+                        size={10} 
+                        className="text-accent" 
+                        strokeWidth={2} 
+                      />
+                    )}
+                  </g>
+
+                  {/* Label (Visible on Hover) */}
+                  <g className="opacity-0 group-hover:opacity-100 transition-opacity">
+                    <rect 
+                      x={s.coords.x - 40} 
+                      y={s.coords.y - 32} 
+                      width={80} 
+                      height={18} 
+                      rx={4} 
+                      fill="black" 
+                      fillOpacity={0.8} 
+                    />
+                    <text 
+                      x={s.coords.x} 
+                      y={s.coords.y - 19} 
+                      textAnchor="middle" 
+                      fill="white" 
+                      fontSize="9" 
+                      className="font-headline tracking-tighter uppercase"
+                    >
+                      {s.name}
+                    </text>
+                  </g>
+                </g>
+              );
+            })}
           </g>
         ))}
       </svg>
-
-      {/* Dynamic Mini HUD */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-6 bg-black/40 backdrop-blur-md border border-white/10 px-6 py-2 rounded-full pointer-events-none">
-        <div className="flex flex-col items-center">
-          <span className="text-[10px] text-accent uppercase font-headline">Status</span>
-          <span className="text-xs text-white">READY</span>
-        </div>
-        <div className="h-4 w-px bg-white/10" />
-        <div className="flex flex-col items-center">
-          <span className="text-[10px] text-accent uppercase font-headline">Date</span>
-          <span className="text-xs text-white font-code">2148.09.12</span>
-        </div>
-      </div>
     </div>
   );
 };

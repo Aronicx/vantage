@@ -31,7 +31,7 @@ export interface Country {
   color: string;
   flagColors: string[];
   flagPattern: 'stripes' | 'cross' | 'circles' | 'diagonal';
-  points: Point[]; // Boundary points for SVG
+  points: Point[]; // Boundary points for SVG representation
   center: Point;
   settlements: Settlement[];
   stats: CountryStats;
@@ -50,11 +50,12 @@ export interface GameState {
 }
 
 const FLAG_PALETTES = [
-  ['#D32F2F', '#1976D2', '#FFFFFF'],
-  ['#388E3C', '#FBC02D', '#212121'],
-  ['#7B1FA2', '#E64A19', '#F5F5F5'],
-  ['#0097A7', '#C2185B', '#FFFFFF'],
-  ['#326194', '#3DBCCF', '#0F1216'],
+  ['#D32F2F', '#1976D2', '#FFFFFF'], // Reds/Blues
+  ['#388E3C', '#FBC02D', '#212121'], // Greens/Yellows
+  ['#7B1FA2', '#E64A19', '#F5F5F5'], // Purples/Oranges
+  ['#0097A7', '#C2185B', '#FFFFFF'], // Cyans/Magentas
+  ['#326194', '#3DBCCF', '#0F1216'], // Command Palette
+  ['#5D4037', '#8D6E63', '#D7CCC8'], // Earthy
 ];
 
 const PATTERNS: ('stripes' | 'cross' | 'circles' | 'diagonal')[] = ['stripes', 'cross', 'circles', 'diagonal'];
@@ -64,49 +65,55 @@ function getDistance(p1: Point, p2: Point): number {
 }
 
 export async function generateNewWorld(width: number, height: number): Promise<GameState> {
-  const countryCount = 5 + Math.floor(Math.random() * 4);
-  const countrySeeds: Point[] = [];
+  const countryCount = 6 + Math.floor(Math.random() * 3);
+  const countries: Country[] = [];
   
+  // 1. Generate unique country seeds
+  const countrySeeds: Point[] = [];
   for (let i = 0; i < countryCount; i++) {
     const angle = (i / countryCount) * Math.PI * 2;
-    const dist = (Math.random() * 0.3 + 0.1) * Math.min(width, height);
+    const dist = (0.2 + Math.random() * 0.25) * Math.min(width, height);
     countrySeeds.push({
       x: width / 2 + Math.cos(angle) * dist,
       y: height / 2 + Math.sin(angle) * dist,
     });
   }
 
-  const countries: Country[] = countrySeeds.map((seed, idx) => ({
-    id: `country-${idx}`,
-    name: `Nations of ${String.fromCharCode(65 + idx)}`,
-    color: FLAG_PALETTES[idx % FLAG_PALETTES.length][0],
-    flagColors: FLAG_PALETTES[idx % FLAG_PALETTES.length],
-    flagPattern: PATTERNS[Math.floor(Math.random() * PATTERNS.length)],
-    points: [],
-    center: seed,
-    settlements: [],
-    stats: {
-      economy: 100 + Math.random() * 900,
-      population: 10 + Math.random() * 90,
-      military: {
-        ground: 50 + Math.random() * 200,
-        air: 20 + Math.random() * 80,
-        naval: 10 + Math.random() * 40,
-      },
-      growthRate: 1.01 + Math.random() * 0.04,
-    }
-  }));
+  // 2. Initialize countries with seeds
+  countrySeeds.forEach((seed, idx) => {
+    const palette = FLAG_PALETTES[idx % FLAG_PALETTES.length];
+    countries.push({
+      id: `country-${idx}`,
+      name: `Sovereignty ${String.fromCharCode(65 + idx)}`,
+      color: palette[0],
+      flagColors: [...palette],
+      flagPattern: PATTERNS[Math.floor(Math.random() * PATTERNS.length)],
+      points: [],
+      center: seed,
+      settlements: [],
+      stats: {
+        economy: 150 + Math.random() * 800,
+        population: 12 + Math.random() * 80,
+        military: {
+          ground: 60 + Math.random() * 150,
+          air: 20 + Math.random() * 60,
+          naval: 10 + Math.random() * 40,
+        },
+        growthRate: 1.015 + Math.random() * 0.035,
+      }
+    });
+  });
 
-  const gridSize = 40;
-  const grid: { countryId: string; p: Point }[] = [];
-  
+  // 3. Simple Voronoi territory generation via grid sampling
+  const gridSize = 30;
   for (let x = 0; x < width; x += gridSize) {
     for (let y = 0; y < height; y += gridSize) {
       const p = { x, y };
-      const distToCenter = getDistance(p, { x: width / 2, y: height / 2 });
-      if (distToCenter > Math.min(width, height) * 0.45) continue;
+      // Limit landmass to a certain radius to feel like an island/continent
+      const distToWorldCenter = getDistance(p, { x: width / 2, y: height / 2 });
+      if (distToWorldCenter > Math.min(width, height) * 0.48) continue;
 
-      let closestId = countries[0].id;
+      let closestId = '';
       let minDist = Infinity;
       
       countries.forEach(c => {
@@ -117,41 +124,57 @@ export async function generateNewWorld(width: number, height: number): Promise<G
         }
       });
       
-      grid.push({ countryId: closestId, p });
+      if (closestId) {
+        countries.find(c => c.id === closestId)?.points.push(p);
+      }
     }
   }
 
+  // 4. Generate Settlements
   countries.forEach(c => {
-    c.points = grid.filter(g => g.countryId === c.id).map(g => g.p);
-    
-    const capital: Settlement = {
-      id: `${c.id}-capital`,
-      name: `Capital`,
+    if (c.points.length === 0) return;
+
+    // Capital
+    c.settlements.push({
+      id: `${c.id}-cap`,
+      name: `Capital Prime`,
       type: 'capital',
       coords: c.center,
-    };
-    
+    });
+
+    // Cities
     const cityCount = 2 + Math.floor(Math.random() * 3);
-    const cities: Settlement[] = [];
     for (let i = 0; i < cityCount; i++) {
-      if (c.points.length === 0) break;
-      const randomIdx = Math.floor(Math.random() * c.points.length);
-      cities.push({
+      const p = c.points[Math.floor(Math.random() * c.points.length)];
+      // Avoid placing right on top of capital
+      if (getDistance(p, c.center) < 60) continue;
+      c.settlements.push({
         id: `${c.id}-city-${i}`,
-        name: `City ${i}`,
+        name: `City ${i + 1}`,
         type: 'city',
-        coords: c.points[randomIdx],
+        coords: p,
       });
     }
 
-    c.settlements = [capital, ...cities];
+    // Military Posts (Outposts)
+    const outpostCount = 1 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < outpostCount; i++) {
+      const p = c.points[Math.floor(Math.random() * c.points.length)];
+      // Outposts are usually further from the center
+      c.settlements.push({
+        id: `${c.id}-post-${i}`,
+        name: `Military Outpost ${i + 1}`,
+        type: 'outpost',
+        coords: p,
+      });
+    }
   });
 
+  // 5. Generate Lore and specific names via Genkit
   try {
-    const loreInput = {
+    const worldLore = await generateGameWorldLore({
       countries: countries.map(c => ({ id: c.id, name: c.name }))
-    };
-    const worldLore = await generateGameWorldLore(loreInput);
+    });
     
     countries.forEach(c => {
       const countryLore = worldLore.countriesLore.find(l => l.id === c.id);
@@ -162,14 +185,18 @@ export async function generateNewWorld(width: number, height: number): Promise<G
           diplomaticRelationships: countryLore.diplomaticRelationships,
           namingConventions: countryLore.namingConventions,
         };
+
+        // Rename settlements based on naming conventions
+        const { cityNamesExamples } = countryLore.namingConventions;
         c.settlements.forEach((s, idx) => {
-          if (s.type === 'capital') s.name = countryLore.namingConventions.cityNamesExamples[0] || s.name;
-          else if (s.type === 'city') s.name = countryLore.namingConventions.cityNamesExamples[idx] || s.name;
+          if (s.type === 'capital') s.name = cityNamesExamples[0] || s.name;
+          else if (s.type === 'city') s.name = cityNamesExamples[idx + 1] || s.name;
+          else if (s.type === 'outpost') s.name = `${cityNamesExamples[idx + 1] || 'Border'} Station`;
         });
       }
     });
   } catch (err) {
-    console.error("Lore generation failed", err);
+    console.error("Lore generation failed, using defaults", err);
   }
 
   return { countries, width, height, gameYear: 2148 };
@@ -177,19 +204,17 @@ export async function generateNewWorld(width: number, height: number): Promise<G
 
 export function processTick(state: GameState): GameState {
   const updatedCountries = state.countries.map(c => {
-    const newStats = { ...c.stats };
+    const newStats = { ...c.stats, military: { ...c.stats.military } };
     
-    // Population growth (0.5% - 2% range)
-    newStats.population *= (1 + (c.stats.growthRate - 1) * 0.5);
-    
-    // Economic growth tied to stability and existing population
+    // Growth
+    newStats.population *= (1 + (c.stats.growthRate - 1) * 0.4);
     newStats.economy *= c.stats.growthRate;
 
-    // Military growth tied to economy (5% of economic growth invested into military)
-    const investment = (newStats.economy - c.stats.economy) * 0.05;
-    newStats.military.ground += investment * 0.5;
-    newStats.military.air += investment * 0.3;
-    newStats.military.naval += investment * 0.2;
+    // Military Reinvestment (Peace-time growth)
+    const militaryBudget = (newStats.economy - c.stats.economy) * 0.08;
+    newStats.military.ground += militaryBudget * 0.5;
+    newStats.military.air += militaryBudget * 0.3;
+    newStats.military.naval += militaryBudget * 0.2;
 
     return { ...c, stats: newStats };
   });
