@@ -17,9 +17,6 @@ export const TacticalMap: React.FC<MapProps> = ({
   onSelectCountry, 
 }) => {
   
-  // Identify countries in alliances for special rendering
-  const countriesInAlliances = new Set(alliances.flatMap(a => a.countryIds));
-
   return (
     <div className="relative w-full h-full bg-[#E5F1F5] overflow-hidden select-none">
       <svg 
@@ -101,22 +98,21 @@ export const TacticalMap: React.FC<MapProps> = ({
         ))}
 
         {/* 2. Outer Black Borders Layer (Independent Countries) */}
-        <g filter="url(#crisp-geo)">
-          {countries.filter(c => !c.allianceId).map(c => (
-            <g key={c.id} className="cursor-pointer" onClick={() => onSelectCountry(c)}>
-              {c.points.map((p, i) => (
-                <rect 
-                  key={`${c.id}-p-${i}`} 
-                  x={p.x - 5.5} 
-                  y={p.y - 5.5} 
-                  width={11.5} 
-                  height={11.5} 
-                  fill={c.color} 
-                />
-              ))}
-            </g>
-          ))}
-        </g>
+        {/* We map individually so each country gets its own outline even if neighbors */}
+        {countries.filter(c => !c.allianceId).map(c => (
+          <g key={`${c.id}-outer`} filter="url(#crisp-geo)" className="cursor-pointer" onClick={() => onSelectCountry(c)}>
+            {c.points.map((p, i) => (
+              <rect 
+                key={`${c.id}-p-${i}`} 
+                x={p.x - 5.5} 
+                y={p.y - 5.5} 
+                width={11.5} 
+                height={11.5} 
+                fill={c.color} 
+              />
+            ))}
+          </g>
+        ))}
 
         {/* 3. Outer Black Borders Layer (Alliances - Grouped for shared outlines) */}
         {alliances.map(alliance => (
