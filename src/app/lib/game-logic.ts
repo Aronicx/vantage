@@ -40,12 +40,16 @@ export interface Country {
   center: Point;
   settlements: Settlement[];
   stats: CountryStats;
-  isAtWar?: boolean;
   lore?: {
     historicalNarrative: string;
     diplomaticRelationships: any[];
     namingConventions: any;
   };
+}
+
+export interface DiplomacyRelation {
+  type: 'war' | 'alliance';
+  participants: string[]; // Country IDs
 }
 
 export interface GameState {
@@ -54,6 +58,7 @@ export interface GameState {
   height: number;
   gameYear: number;
   isPaused: boolean;
+  relations: DiplomacyRelation[];
 }
 
 const FLAG_PALETTES = [
@@ -200,7 +205,14 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     console.error("Lore generation failed, using defaults", err);
   }
 
-  return { countries, width, height, gameYear: 2148, isPaused: false };
+  return { 
+    countries, 
+    width, 
+    height, 
+    gameYear: 2148, 
+    isPaused: false,
+    relations: []
+  };
 }
 
 export function processTick(state: GameState): GameState {
@@ -210,7 +222,7 @@ export function processTick(state: GameState): GameState {
     const prevStats = c.stats;
     const newStats = { ...prevStats, military: { ...prevStats.military } };
     
-    // 1. Population Growth (affected by stability)
+    // 1. Population Growth
     const popGrowth = prevStats.population * (prevStats.growthRate - 1) * 0.4;
     newStats.population += popGrowth;
 
@@ -219,13 +231,11 @@ export function processTick(state: GameState): GameState {
     newStats.economy += econGrowth;
 
     // 3. Military Reinvestment
-    // Peace-time: reinvest a percentage of GDP growth into military
     const milInvestment = econGrowth * 0.12; 
     newStats.military.ground += milInvestment * 0.5;
     newStats.military.air += milInvestment * 0.3;
     newStats.military.naval += milInvestment * 0.2;
 
-    // Track last growth for UI
     newStats.lastGrowth = {
       economy: econGrowth,
       population: popGrowth,
@@ -239,5 +249,21 @@ export function processTick(state: GameState): GameState {
     ...state,
     countries: updatedCountries,
     gameYear: state.gameYear + 1
+  };
+}
+
+export function setDiplomacy(state: GameState, countryId1: string, countryId2: string, type: 'war' | 'alliance' | 'neutral'): GameState {
+  // Remove existing relations between these two
+  const filteredRelations = state.relations.filter(r => 
+    !(r.participants.includes(countryId1) && r.participants.includes(countryId2))
+  );
+
+  if (type === 'neutral') {
+    return { ...state, relations: filteredRelations };
+  }
+
+  return {
+    ...state,
+    relations: [...filteredRelations, { type, participants: [countryId1, countryId2] }]
   };
 }

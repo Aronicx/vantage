@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { generateNewWorld, processTick, GameState, Country, Settlement } from './lib/game-logic';
+import { generateNewWorld, processTick, setDiplomacy, GameState, Country, Settlement } from './lib/game-logic';
 import { TacticalMap } from '@/components/game/TacticalMap';
 import { HeraldryIcon } from '@/components/game/HeraldryIcon';
 import { 
@@ -21,13 +21,18 @@ import {
   Anchor,
   CircleDot,
   Pause,
-  Play
+  Play,
+  Swords,
+  Handshake,
+  UserCheck,
+  EyeOff
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
+import { cn } from '@/lib/utils';
 
 export default function VantagePoint() {
   const [world, setWorld] = useState<GameState | null>(null);
@@ -77,6 +82,16 @@ export default function VantagePoint() {
 
   const toggleOverlay = (key: keyof typeof overlays) => {
     setOverlays(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleSetDiplomacy = (id1: string, id2: string, type: 'war' | 'alliance' | 'neutral') => {
+    if (world) {
+      setWorld(setDiplomacy(world, id1, id2, type));
+    }
+  };
+
+  const getRelation = (id1: string, id2: string) => {
+    return world?.relations.find(r => r.participants.includes(id1) && r.participants.includes(id2)) || null;
   };
 
   const selectedCountry = world?.countries.find(c => c.id === selectedCountryId) || null;
@@ -188,6 +203,12 @@ export default function VantagePoint() {
               <div className="h-2 w-2 rounded-full bg-accent" />
               <span className="text-white/70">Strategic Outpost</span>
             </div>
+            {world?.relations.some(r => r.type === 'war') && (
+              <div className="flex items-center gap-3 text-xs pt-2 border-t border-white/10">
+                <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                <span className="text-red-400 font-headline uppercase text-[10px]">Active War Zone</span>
+              </div>
+            )}
           </div>
         </div>
       </main>
@@ -297,23 +318,67 @@ export default function VantagePoint() {
                 </TabsContent>
 
                 <TabsContent value="diplomacy" className="space-y-4">
-                  {selectedCountry.lore?.diplomaticRelationships.map((rel, idx) => (
-                    <div key={idx} className="bg-secondary/30 border border-white/5 p-4 rounded-lg hover:bg-secondary/50 transition-colors group">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-headline text-white group-hover:text-accent transition-colors">{rel.targetCountryName}</span>
-                        <Badge variant={rel.type === 'ally' ? 'default' : rel.type === 'enemy' ? 'destructive' : 'secondary'} className="text-[10px] uppercase">
-                          {rel.type}
-                        </Badge>
+                  <div className="mb-6 p-4 bg-accent/5 border border-accent/10 rounded-lg">
+                    <h3 className="text-xs font-headline text-accent uppercase tracking-widest mb-3 flex items-center gap-2">
+                      <Swords className="h-3.5 w-3.5" /> 
+                      Diplomatic Command Center
+                    </h3>
+                    <p className="text-[10px] text-muted-foreground mb-4 font-code">SELECT RELATIONSHIP STATUS WITH OTHER NATIONS:</p>
+                    
+                    <div className="space-y-2">
+                      {world?.countries.filter(c => c.id !== selectedCountry.id).map(other => {
+                        const rel = getRelation(selectedCountry.id, other.id);
+                        return (
+                          <div key={other.id} className="flex items-center justify-between gap-2 p-2 rounded bg-black/20 border border-white/5 group hover:border-white/10 transition-colors">
+                            <span className="text-[11px] font-headline text-white truncate max-w-[120px]">{other.name}</span>
+                            
+                            <div className="flex items-center gap-1">
+                              <Button 
+                                size="sm" 
+                                variant="ghost" 
+                                className={cn(
+                                  "h-7 px-2 text-[10px] uppercase font-headline",
+                                  rel?.type === 'alliance' ? "text-green-400 bg-green-400/10" : "text-white/40 hover:text-green-400"
+                                )}
+                                onClick={() => handleSetDiplomacy(selectedCountry.id, other.id, rel?.type === 'alliance' ? 'neutral' : 'alliance')}
+                              >
+                                {rel?.type === 'alliance' ? <UserCheck className="h-3 w-3 mr-1" /> : <Handshake className="h-3 w-3 mr-1" />}
+                                Ally
+                              </Button>
+                              
+                              <Button 
+                                size="sm" 
+                                variant="ghost" 
+                                className={cn(
+                                  "h-7 px-2 text-[10px] uppercase font-headline",
+                                  rel?.type === 'war' ? "text-red-400 bg-red-400/10" : "text-white/40 hover:text-red-400"
+                                )}
+                                onClick={() => handleSetDiplomacy(selectedCountry.id, other.id, rel?.type === 'war' ? 'neutral' : 'war')}
+                              >
+                                {rel?.type === 'war' ? <EyeOff className="h-3 w-3 mr-1" /> : <Swords className="h-3 w-3 mr-1" />}
+                                War
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <h4 className="text-[10px] text-muted-foreground uppercase font-headline tracking-widest">Historical Records</h4>
+                    {selectedCountry.lore?.diplomaticRelationships.map((rel, idx) => (
+                      <div key={idx} className="bg-secondary/30 border border-white/5 p-4 rounded-lg hover:bg-secondary/50 transition-colors group">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-sm font-headline text-white group-hover:text-accent transition-colors">{rel.targetCountryName}</span>
+                          <Badge variant={rel.type === 'ally' ? 'default' : rel.type === 'enemy' ? 'destructive' : 'secondary'} className="text-[10px] uppercase">
+                            {rel.type}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground line-clamp-2 italic leading-relaxed">{rel.description}</p>
                       </div>
-                      <p className="text-xs text-muted-foreground line-clamp-2 italic leading-relaxed">{rel.description}</p>
-                    </div>
-                  ))}
-                  {!selectedCountry.lore?.diplomaticRelationships.length && (
-                    <div className="text-center py-10">
-                      <Info className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
-                      <p className="text-sm text-muted-foreground">No active diplomatic records found.</p>
-                    </div>
-                  )}
+                    ))}
+                  </div>
                 </TabsContent>
               </Tabs>
             </ScrollArea>
@@ -346,3 +411,4 @@ export default function VantagePoint() {
     </div>
   );
 }
+
