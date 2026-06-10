@@ -64,7 +64,7 @@ const generateLorePrompt = ai.definePrompt({
   prompt: `You are an expert geopolitical historian and world-builder for a strategy game. Your task is to generate detailed lore for a set of fictional countries on a new world map. For each country, you need to create a unique historical narrative, define its diplomatic relationships with other countries in the provided list, and establish its distinctive naming conventions.\n\nThe output should be a JSON array of country lore objects, each containing an ID, name, historical narrative, a list of diplomatic relationships, and naming conventions.\n\nEnsure that:\n1.  **Historical Narratives** are rich and provide context for the current diplomatic relationships. They should cover key events, conflicts, and cultural developments.\n2.  **Diplomatic Relationships** are plausible and reflect a history of interactions, conflicts, or alliances between the listed countries. The relationships should be diverse (ally, neutral, rival, enemy, vassal, overlord, disputed). Every country should have at least one relationship defined with another country from the input list, if possible.\n3.  **Naming Conventions** feel consistent with the country's history and cultural identity. Provide examples for city names, river names, and historical figures' names, along with a description of the linguistic influence.\n\nHere is the list of countries for which you need to generate lore. Use their IDs for targetCountryId in diplomatic relationships:\n\n{{#each countries}}\n- ID: {{this.id}}, Name: {{this.name}}\n{{/each}}\n\nGenerate the full JSON output directly, without any additional conversational text.`,
 });
 
-// Flow definition with simple retry logic
+// Flow definition with more robust retry logic and fallback
 const generateGameWorldLoreFlow = ai.defineFlow(
   {
     name: 'generateGameWorldLoreFlow',
@@ -73,8 +73,8 @@ const generateGameWorldLoreFlow = ai.defineFlow(
   },
   async (input) => {
     let attempts = 0;
-    const maxAttempts = 3;
-    const delay = 2000; // 2 seconds
+    const maxAttempts = 5;
+    const baseDelay = 3000;
 
     while (attempts < maxAttempts) {
       try {
@@ -83,18 +83,43 @@ const generateGameWorldLoreFlow = ai.defineFlow(
         return output;
       } catch (error: any) {
         attempts++;
-        const isUnavailable = error?.message?.includes('503') || error?.message?.includes('Service Unavailable') || error?.message?.includes('high demand');
+        const errorMessage = error?.message || '';
+        const isUnavailable = errorMessage.includes('503') || 
+                             errorMessage.includes('Service Unavailable') || 
+                             errorMessage.includes('high demand') ||
+                             errorMessage.includes('UNAVAILABLE');
         
         if (isUnavailable && attempts < maxAttempts) {
-          console.warn(`Lore generation attempt ${attempts} failed due to service demand. Retrying in ${delay}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delay * attempts)); // Exponential backoff
+          const currentDelay = baseDelay * attempts;
+          console.warn(`Lore generation attempt ${attempts} failed due to service demand. Retrying in ${currentDelay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, currentDelay)); 
           continue;
         }
         
-        console.error('Final attempt at lore generation failed:', error);
-        throw error;
+        console.error(`Attempt ${attempts} at lore generation failed:`, error);
+        
+        // If we've exhausted retries, return a fallback instead of crashing
+        if (attempts >= maxAttempts) {
+          console.warn('Lore generation failed all retries. Using fallback empty lore.');
+          return {
+            countriesLore: input.countries.map(c => ({
+              id: c.id,
+              name: c.name,
+              historicalNarrative: "The history of this land is lost to time.",
+              diplomaticRelationships: [],
+              namingConventions: {
+                languageInfluence: "Unknown",
+                cityNamesExamples: [c.name],
+                riverNamesExamples: [],
+                historicalFiguresNamesExamples: []
+              }
+            }))
+          };
+        }
       }
     }
-    throw new Error('Lore generation failed after multiple retries');
+    
+    // Final defensive fallback
+    return { countriesLore: [] };
   }
 );
