@@ -20,8 +20,9 @@ export const TacticalMap: React.FC<MapProps> = ({
 }) => {
   
   const getDisplayColor = (c: Country) => {
-    if (alliances.length > 0) {
-      const alliance = alliances.find(a => a.countryIds.includes(c.id));
+    // If the country is part of an alliance, use the alliance color
+    if (c.allianceId) {
+      const alliance = alliances.find(a => a.id === c.allianceId);
       if (alliance) return alliance.color;
     }
     return c.color;
@@ -35,7 +36,6 @@ export const TacticalMap: React.FC<MapProps> = ({
         preserveAspectRatio="xMidYMid meet"
       >
         <defs>
-          {/* Crisp Geo Filter: Merges the grid cells into solid organic shapes */}
           <filter id="crisp-geo">
             <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
             <feColorMatrix 
@@ -58,7 +58,7 @@ export const TacticalMap: React.FC<MapProps> = ({
           </filter>
         </defs>
 
-        {/* Territory Polygons (Layered for solid look) */}
+        {/* Territory Polygons */}
         <g filter="url(#crisp-geo)">
           {countries.map(c => {
             const color = getDisplayColor(c);
@@ -79,8 +79,8 @@ export const TacticalMap: React.FC<MapProps> = ({
           })}
         </g>
 
-        {/* Province Outlines (Natural Borders) */}
-        <g opacity="0.15" className="pointer-events-none">
+        {/* Province Outlines */}
+        <g opacity="0.12" className="pointer-events-none">
           {countries.map(c => (
             c.provinces.map((prov, pidx) => (
               prov.points.map((p, i) => (
@@ -99,7 +99,7 @@ export const TacticalMap: React.FC<MapProps> = ({
           ))}
         </g>
 
-        {/* Crisp Selection Outline */}
+        {/* Selection Outline */}
         {selection.map(id => {
           const c = countries.find(curr => curr.id === id);
           if (!c) return null;
@@ -122,35 +122,32 @@ export const TacticalMap: React.FC<MapProps> = ({
           );
         })}
 
-        {/* Labels & Landmarks */}
+        {/* Labels & Markers */}
         {countries.map(c => {
-          // Find the capital settlement
           const capital = c.settlements.find(s => s.type === 'capital');
           if (!capital) return null;
 
           return (
             <React.Fragment key={`${c.id}-hud`}>
-              {/* Capital Marker */}
               <g className="pointer-events-none">
                 <circle 
                   cx={capital.coords.x} 
                   cy={capital.coords.y} 
-                  r={8} 
+                  r={7} 
                   fill="white"
                   stroke="black"
                   strokeWidth="1.5"
                 />
-                <g transform={`translate(${capital.coords.x - 4.5}, ${capital.coords.y - 4.5})`}>
-                  <Landmark size={9} className="text-black" />
+                <g transform={`translate(${capital.coords.x - 4}, ${capital.coords.y - 4})`}>
+                  <Landmark size={8} className="text-black" />
                 </g>
               </g>
 
-              {/* Country Name Label - Offset from capital to avoid overlap */}
               <text 
                 x={capital.coords.x} 
-                y={capital.coords.y - 18} 
+                y={capital.coords.y - 16} 
                 textAnchor="middle" 
-                className="pointer-events-none uppercase font-headline font-bold text-[11px] tracking-[0.2em] fill-black"
+                className="pointer-events-none uppercase font-headline font-bold text-[10px] tracking-[0.15em] fill-black"
                 filter="url(#text-glow)"
               >
                 {c.name}
