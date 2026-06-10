@@ -292,58 +292,84 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   const c2 = state.countries.find(c => c.id === id2);
   if (!c1 || !c2) return { state, result: 'Error' };
 
-  let winner = { ...JSON.parse(JSON.stringify(forcedWinnerId ? (forcedWinnerId === id1 ? c1 : c2) : (Math.random() > 0.5 ? c1 : c2))) };
-  let loser = { ...JSON.parse(JSON.stringify(winner.id === id1 ? c2 : c1)) };
-
   const calculatePower = (c: Country) => {
+    // Power is derived from military, economy, and population
     let p = c.stats.military.ground + c.stats.military.air + (c.stats.military.naval * 0.65);
-    p += c.stats.economy * 0.12; 
+    p += (c.stats.economy * 0.15); // Economy provides logistics/funding
+    p += (c.stats.population * 2); // Manpower reserves
+    
+    // Recovery penalty
+    if (c.recoveryEndYear && state.gameYear <= c.recoveryEndYear) {
+      p *= 0.6;
+    }
     return p;
   };
   
   const p1 = calculatePower(c1);
   const p2 = calculatePower(c2);
-  const ratio = Math.max(p1, p2) / Math.min(p1, p2);
 
+  // Apply a small luck factor (+/- 5%) to each side
+  const luck1 = 0.95 + Math.random() * 0.10;
+  const luck2 = 0.95 + Math.random() * 0.10;
+  
+  const effectiveP1 = p1 * luck1;
+  const effectiveP2 = p2 * luck2;
+
+  let winnerId: string;
+  if (forcedWinnerId) {
+    winnerId = forcedWinnerId;
+  } else {
+    winnerId = effectiveP1 > effectiveP2 ? c1.id : c2.id;
+  }
+
+  const winner = { ...JSON.parse(JSON.stringify(winnerId === id1 ? c1 : c2)) };
+  const loser = { ...JSON.parse(JSON.stringify(winnerId === id1 ? c2 : c1)) };
+
+  const ratio = Math.max(p1, p2) / Math.min(p1, p2);
   const isLoserVulnerable = loser.recoveryEndYear && state.gameYear <= loser.recoveryEndYear;
-  const winnerAttrition = 0.05 + (Math.random() * 0.05);
-  const loserAttrition = isLoserVulnerable ? 0.40 + (Math.random() * 0.15) : 0.20 + (Math.random() * 0.10);
+  
+  // Attrition scales inversely with how decisive the victory was
+  const winnerAttrition = 0.02 + (Math.random() * 0.03); 
+  const loserAttrition = isLoserVulnerable ? 0.35 + (Math.random() * 0.15) : 0.15 + (Math.random() * 0.10);
 
   const originalLoserEconomy = loser.stats.economy;
   const originalLoserPopulation = loser.stats.population;
 
+  // Visual era shift
   winner.color = getRandomColor();
   loser.color = getRandomColor();
 
   winner.stats.economy *= (1 - winnerAttrition);
-  winner.stats.population *= (1 - winnerAttrition * 0.3);
-  winner.stats.military.ground *= (1 - winnerAttrition * 1.4);
-  winner.stats.military.air *= (1 - winnerAttrition * 1.4);
-  winner.stats.military.naval *= (1 - winnerAttrition * 1.2);
+  winner.stats.population *= (1 - winnerAttrition * 0.2);
+  winner.stats.military.ground *= (1 - winnerAttrition * 1.2);
+  winner.stats.military.air *= (1 - winnerAttrition * 1.2);
+  winner.stats.military.naval *= (1 - winnerAttrition * 1.0);
 
   loser.stats.economy *= (1 - loserAttrition);
-  loser.stats.population *= (1 - loserAttrition * 0.7);
-  loser.stats.military.ground *= (1 - loserAttrition * 2.0);
-  loser.stats.military.air *= (1 - loserAttrition * 2.0);
-  loser.stats.military.naval *= (1 - loserAttrition * 1.8);
+  loser.stats.population *= (1 - loserAttrition * 0.5);
+  loser.stats.military.ground *= (1 - loserAttrition * 1.8);
+  loser.stats.military.air *= (1 - loserAttrition * 1.8);
+  loser.stats.military.naval *= (1 - loserAttrition * 1.5);
 
   const lootFactor = 0.40;
   winner.stats.economy += (originalLoserEconomy - loser.stats.economy) * lootFactor;
   winner.stats.population += (originalLoserPopulation - loser.stats.population) * lootFactor;
   
-  winner.recoveryEndYear = state.gameYear + 4;
-  winner.boomEndYear = state.gameYear + 12;
-  loser.recoveryEndYear = state.gameYear + 8; 
+  winner.recoveryEndYear = state.gameYear + 3;
+  winner.boomEndYear = state.gameYear + 10;
+  loser.recoveryEndYear = state.gameYear + 10; 
 
-  let lossPercent = 0.15;
-  let resultText = `New border lines drawn between ${winner.name} and ${loser.name}.`;
+  let lossPercent = 0.10;
+  let resultText = `Territorial adjustments confirmed between ${winner.name} and ${loser.name}.`;
 
   if (isLoserVulnerable) {
-    lossPercent = 0.65 + Math.random() * 0.25;
-    resultText = `${loser.name}'s defense lines collapsed!`;
+    lossPercent = 0.60 + Math.random() * 0.20;
+    resultText = `${loser.name}'s collapsed infrastructure led to massive territorial losses.`;
   } else {
-    if (ratio > 1.7) { lossPercent = 0.30; resultText = 'Significant territorial redistribution achieved.'; }
-    if (ratio > 2.8) { lossPercent = 0.50; resultText = 'Overwhelming breakthrough into enemy territory.'; }
+    // deciveness depends on the power gap
+    if (ratio > 1.5) { lossPercent = 0.25; resultText = `${winner.name} successfully pushed deep into ${loser.name}'s territory.`; }
+    if (ratio > 2.5) { lossPercent = 0.45; resultText = `${winner.name} achieved a total strategic breakthrough.`; }
+    if (ratio > 4.0) { lossPercent = 0.70; resultText = `${winner.name} overwhelmed ${loser.name} with crushing superiority.`; }
   }
 
   const pointsToTransferCount = Math.floor(loser.points.length * lossPercent);
@@ -363,7 +389,7 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   });
 
   if (isCapitalCaptured) {
-    resultText += ` ${loser.name}'s capital was occupied.`;
+    resultText += ` The fall of the capital of ${loser.name} has paralyzed the nation.`;
     if (loser.points.length > 5) {
       const newCountryId = `country-rump-${Date.now()}`;
       const avgX = loser.points.reduce((s, p) => s + p.x, 0) / loser.points.length;
@@ -373,27 +399,28 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
       const newCountry: Country = {
         ...loser,
         id: newCountryId,
-        name: `Remnant ${loser.name}`,
+        name: `Remnant of ${loser.name}`,
         center: newCenter,
-        settlements: [{ id: `${newCountryId}-cap`, name: `Temporary Capital`, type: 'capital', coords: newCenter, ownerId: newCountryId }],
+        settlements: [{ id: `${newCountryId}-cap`, name: `Provisional Capital`, type: 'capital', coords: newCenter, ownerId: newCountryId }],
         allianceId: undefined,
         stats: {
            ...loser.stats,
-           economy: loser.stats.economy * 0.3,
-           population: loser.stats.population * 0.4
+           economy: loser.stats.economy * 0.4,
+           population: loser.stats.population * 0.5
         },
         recoveryEndYear: state.gameYear + 15
       };
       nextCountries = nextCountries.filter(c => c.id !== loser.id).concat(newCountry);
     } else {
-      resultText = `${loser.name} has been annexed into ${winner.name}.`;
+      resultText = `${loser.name} has been fully annexed by ${winner.name}.`;
       nextCountries = nextCountries.filter(c => c.id !== loser.id);
     }
   } else if (loser.points.length <= 2) {
-    resultText = `${loser.name} was dissolved.`;
+    resultText = `${loser.name} has effectively ceased to exist as a sovereign state.`;
     nextCountries = nextCountries.filter(c => c.id !== loser.id);
   }
 
+  // Recalculate provinces for affected nations
   nextCountries = nextCountries.map(country => {
     if (country.id === winner.id || country.id.startsWith('country-rump-')) {
        const provinceCount = Math.max(2, Math.floor(country.points.length / 40));
@@ -510,27 +537,26 @@ export function mergeCountries(state: GameState, ids: string[], customName: stri
 export function executeAllianceWar(state: GameState): GameState {
   if (state.alliances.length < 2) return state;
 
-  const alliancePowers = state.alliances.map(a => {
-    let combinedEconomy = 0;
-    let combinedPopulation = 0;
-    let combinedGround = 0;
-    let combinedAir = 0;
-    let combinedNaval = 0;
-
+  const calculateAlliancePower = (a: Alliance, countries: Country[]) => {
+    let combinedPower = 0;
     a.countryIds.forEach(cid => {
-      const c = state.countries.find(curr => curr.id === cid);
+      const c = countries.find(curr => curr.id === cid);
       if (c) {
-        combinedEconomy += c.stats.economy;
-        combinedPopulation += c.stats.population;
-        combinedGround += c.stats.military.ground;
-        combinedAir += c.stats.military.air;
-        combinedNaval += c.stats.military.naval;
+        let p = c.stats.military.ground + c.stats.military.air + (c.stats.military.naval * 0.65);
+        p += (c.stats.economy * 0.15);
+        p += (c.stats.population * 2);
+        if (c.recoveryEndYear && state.gameYear <= c.recoveryEndYear) p *= 0.6;
+        combinedPower += p;
       }
     });
+    return combinedPower;
+  };
 
-    const power = combinedGround + combinedAir + (combinedNaval * 0.65) + (combinedEconomy * 0.15) + (combinedPopulation * 0.05);
-    return { id: a.id, power, countryIds: a.countryIds };
-  });
+  const alliancePowers = state.alliances.map(a => ({
+    id: a.id,
+    power: calculateAlliancePower(a, state.countries),
+    countryIds: a.countryIds
+  }));
 
   const sortedAlliances = [...alliancePowers].sort((a, b) => b.power - a.power);
   const winningAllianceInfo = sortedAlliances[0];
@@ -544,6 +570,7 @@ export function executeAllianceWar(state: GameState): GameState {
     a.countryIds.forEach(cid => {
       const loserC = currentCountries.find(c => c.id === cid);
       if (!loserC) return;
+      // The victor is a random member of the winning alliance
       const receiverCid = winningAlliance.countryIds[Math.floor(Math.random() * winningAlliance.countryIds.length)];
       const res = executeBattle({ ...state, countries: currentCountries }, receiverCid, loserC.id, receiverCid);
       currentCountries = res.state.countries;
