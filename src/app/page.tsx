@@ -42,7 +42,7 @@ export default function VantagePoint() {
 
   useEffect(() => {
     if (world?.gameStarted && !world.isPaused) {
-      // Scale: 1 year = 30 real-world seconds (30000ms)
+      // 1 year = 30 real-world seconds
       const interval = 30000 / (world.simulationSpeed || 1);
       timerRef.current = setInterval(() => {
         setWorld(prev => prev ? processTick(prev) : null);
@@ -84,7 +84,7 @@ export default function VantagePoint() {
     if (selection.length !== 2 || !world) return;
     const { state, result } = executeBattle(world, selection[0], selection[1]);
     setWorld(state);
-    toast({ title: "Operation Complete", description: result });
+    toast({ title: "Operation Concluded", description: result });
     setSelection([]);
     setMode('none');
   };
@@ -94,16 +94,16 @@ export default function VantagePoint() {
     const nextWorld = createAlliance(world, selection);
     setWorld(nextWorld);
     setSelection([]);
-    toast({ title: "Coalition Formed", description: `Alliance ${nextWorld.alliances.length} established.` });
+    toast({ title: "New Coalition", description: `Bloc established with ${selection.length} members.` });
     setMode('war-menu');
   };
 
   const executeWar = () => {
     if (!world || world.alliances.length < 2) return;
     const nextWorld = executeAllianceWar(world);
-    setWorld({ ...nextWorld, alliances: [] }); 
+    setWorld(nextWorld); 
     setMode('none');
-    toast({ title: "Conflict Resolution", description: "Strategic reallocation of territories complete." });
+    toast({ title: "Global Conflict Resolved", description: "Alliances have dissolved and territories have been redistributed." });
   };
 
   if (!world || !world.gameStarted) {
@@ -120,7 +120,7 @@ export default function VantagePoint() {
           onClick={handleStart} 
           disabled={loading}
         >
-          {loading ? "GENERATING WORLD..." : "INITIALIZE"}
+          {loading ? "INITIALIZING ATLAS..." : "START SIMULATION"}
         </Button>
       </div>
     );
@@ -138,7 +138,7 @@ export default function VantagePoint() {
           />
         </div>
 
-        {/* Global HUD Controls */}
+        {/* HUD Controls */}
         <div className="absolute top-6 left-6 flex flex-col gap-3">
           <div className="bg-white/90 backdrop-blur-sm border border-black/10 p-1 flex flex-col shadow-sm">
             <Button 
@@ -146,38 +146,37 @@ export default function VantagePoint() {
               className={cn("justify-start gap-3 h-10 text-[10px] uppercase font-bold rounded-none", (mode === 'battle-menu' || mode === 'battle-select') && "bg-black text-white")}
               onClick={() => { setMode('battle-menu'); setSelection([]); }}
             >
-              <Swords className="h-4 w-4" /> BATTLE
+              <Swords className="h-4 w-4" /> LOCAL WAR
             </Button>
             <Button 
               variant={mode === 'war-menu' || mode === 'war-select' ? "default" : "ghost"} 
               className={cn("justify-start gap-3 h-10 text-[10px] uppercase font-bold rounded-none", (mode === 'war-menu' || mode === 'war-select') && "bg-black text-white")}
               onClick={() => { setMode('war-menu'); setSelection([]); }}
             >
-              <Shield className="h-4 w-4" /> WAR
+              <Shield className="h-4 w-4" /> BLOC WAR
             </Button>
             <Button 
               variant={mode === 'stats-panel' ? "default" : "ghost"} 
               className={cn("justify-start gap-3 h-10 text-[10px] uppercase font-bold rounded-none", mode === 'stats-panel' && "bg-black text-white")}
               onClick={() => { setMode(mode === 'stats-panel' ? 'none' : 'stats-panel'); }}
             >
-              <ListOrdered className="h-4 w-4" /> STATS
+              <ListOrdered className="h-4 w-4" /> RANKINGS
             </Button>
           </div>
 
-          {/* Contextual Sub-Menus */}
           {(mode === 'battle-menu' || mode === 'battle-select') && (
             <Card className="bg-white border-black/10 rounded-none w-48 shadow-lg">
               <CardHeader className="p-3 border-b border-black/5">
-                <CardTitle className="text-[10px] uppercase font-bold">Battle Command</CardTitle>
+                <CardTitle className="text-[10px] uppercase font-bold">Battle Console</CardTitle>
               </CardHeader>
               <CardContent className="p-3 space-y-3">
-                <p className="text-[10px] text-muted-foreground leading-tight">Select two rival nations on the map to resolve border disputes. War results in long-term economic shifts.</p>
                 <div className="space-y-1">
                   {selection.map(id => (
                     <div key={id} className="text-[9px] font-bold uppercase truncate border-l-2 border-black pl-2">
                       {world.countries.find(c => c.id === id)?.name}
                     </div>
                   ))}
+                  {selection.length === 0 && <p className="text-[9px] text-muted-foreground uppercase italic">No targets selected</p>}
                 </div>
                 {mode === 'battle-menu' ? (
                    <Button size="sm" className="w-full h-8 text-[9px] uppercase font-bold bg-black text-white rounded-none" onClick={() => setMode('battle-select')}>
@@ -189,7 +188,7 @@ export default function VantagePoint() {
                       EXECUTE BATTLE
                     </Button>
                     <Button variant="ghost" size="sm" className="w-full h-8 text-[9px] uppercase font-bold rounded-none" onClick={() => { setMode('battle-menu'); setSelection([]); }}>
-                      RESET
+                      CANCEL
                     </Button>
                   </div>
                 )}
@@ -204,7 +203,7 @@ export default function VantagePoint() {
               </CardHeader>
               <CardContent className="p-3 space-y-3">
                 <div className="space-y-1">
-                   <p className="text-[9px] text-muted-foreground uppercase">Current Blocs: {world.alliances.length}</p>
+                   <p className="text-[9px] text-muted-foreground uppercase">Active Blocs: {world.alliances.length}</p>
                    {world.alliances.map(a => (
                      <div key={a.id} className="flex items-center gap-2">
                         <div className="w-2 h-2" style={{ backgroundColor: a.color }} />
@@ -239,7 +238,7 @@ export default function VantagePoint() {
           )}
         </div>
 
-        {/* Status Bar */}
+        {/* Global HUD */}
         <div className="absolute top-6 right-6 flex items-center gap-3 bg-white/90 backdrop-blur-sm border border-black/10 p-1 shadow-sm">
           <Button size="icon" variant="ghost" className="h-8 w-8 rounded-none" onClick={() => setWorld(w => w ? {...w, isPaused: !w.isPaused} : null)}>
             {world.isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
@@ -260,7 +259,7 @@ export default function VantagePoint() {
       {mode === 'stats-panel' && (
         <aside className="w-[400px] h-full bg-white border-l border-black/10 flex flex-col z-50 shadow-2xl animate-in slide-in-from-right duration-300">
           <div className="p-6 border-b border-black/5 flex items-center justify-between">
-            <h2 className="text-lg font-headline font-bold uppercase tracking-widest">Global Atlas Statistics</h2>
+            <h2 className="text-lg font-headline font-bold uppercase tracking-widest">Global Rankings</h2>
             <Button size="icon" variant="ghost" onClick={() => setMode('none')} className="rounded-none"><X className="h-4 w-4" /></Button>
           </div>
           <ScrollArea className="flex-1">
@@ -280,12 +279,12 @@ export default function VantagePoint() {
                       <div className="flex gap-2">
                         {isRecovering && (
                           <Badge variant="outline" className="text-[8px] uppercase font-bold border-yellow-500 text-yellow-600 rounded-none bg-yellow-50">
-                            <Activity className="h-2.5 w-2.5 mr-1" /> Recovering
+                            <Activity className="h-2.5 w-2.5 mr-1" /> RECOVERING
                           </Badge>
                         )}
                         {isBooming && (
                           <Badge variant="outline" className="text-[8px] uppercase font-bold border-green-500 text-green-600 rounded-none bg-green-50">
-                            <Zap className="h-2.5 w-2.5 mr-1" /> Economic Boom
+                            <Zap className="h-2.5 w-2.5 mr-1" /> BOOMING
                           </Badge>
                         )}
                       </div>
@@ -302,15 +301,15 @@ export default function VantagePoint() {
                     </div>
                     <div className="flex gap-6 pt-2">
                       <div>
-                        <span className="text-[8px] text-muted-foreground uppercase font-bold block mb-1">Ground</span>
+                        <span className="text-[8px] text-muted-foreground uppercase font-bold block mb-1">GND</span>
                         <span className="text-[10px] font-bold font-mono">{c.stats.military.ground.toFixed(0)}</span>
                       </div>
                       <div>
-                        <span className="text-[8px] text-muted-foreground uppercase font-bold block mb-1">Air</span>
+                        <span className="text-[8px] text-muted-foreground uppercase font-bold block mb-1">AIR</span>
                         <span className="text-[10px] font-bold font-mono">{c.stats.military.air.toFixed(0)}</span>
                       </div>
                       <div>
-                        <span className="text-[8px] text-muted-foreground uppercase font-bold block mb-1">Naval</span>
+                        <span className="text-[8px] text-muted-foreground uppercase font-bold block mb-1">NAV</span>
                         <span className="text-[10px] font-bold font-mono">{c.stats.military.naval.toFixed(0)}</span>
                       </div>
                     </div>
