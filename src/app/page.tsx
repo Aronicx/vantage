@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { generateNewWorld, GameState, Country, Settlement } from './lib/game-logic';
+import React, { useState, useEffect, useRef } from 'react';
+import { generateNewWorld, processTick, GameState, Country, Settlement } from './lib/game-logic';
 import { TacticalMap } from '@/components/game/TacticalMap';
 import { HeraldryIcon } from '@/components/game/HeraldryIcon';
 import { 
@@ -14,18 +14,23 @@ import {
   Zap,
   RotateCcw,
   Globe,
-  Info
+  Info,
+  Users,
+  TrendingUp,
+  Plane,
+  Anchor,
+  CircleDot
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
 
 export default function VantagePoint() {
   const [world, setWorld] = useState<GameState | null>(null);
-  const [selectedCountry, setSelectedCountry] = useState<Country | null>(null);
-  const [selectedSettlement, setSelectedSettlement] = useState<{s: Settlement, c: Country} | null>(null);
+  const [selectedCountryId, setSelectedCountryId] = useState<string | null>(null);
+  const [selectedSettlement, setSelectedSettlement] = useState<{s: Settlement, countryId: string} | null>(null);
   const [loading, setLoading] = useState(true);
   const [overlays, setOverlays] = useState({
     borders: true,
@@ -33,22 +38,40 @@ export default function VantagePoint() {
     economic: false
   });
 
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
     initNewGame();
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
   }, []);
+
+  useEffect(() => {
+    if (world && !timerRef.current) {
+      timerRef.current = setInterval(() => {
+        setWorld(prev => prev ? processTick(prev) : null);
+      }, 3000); // Process a year every 3 seconds
+    }
+  }, [world]);
 
   const initNewGame = async () => {
     setLoading(true);
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = null;
+    
     const newWorld = await generateNewWorld(1000, 1000);
     setWorld(newWorld);
     setLoading(false);
-    setSelectedCountry(null);
+    setSelectedCountryId(null);
     setSelectedSettlement(null);
   };
 
   const toggleOverlay = (key: keyof typeof overlays) => {
     setOverlays(prev => ({ ...prev, [key]: !prev[key] }));
   };
+
+  const selectedCountry = world?.countries.find(c => c.id === selectedCountryId) || null;
 
   if (loading) {
     return (
@@ -66,7 +89,7 @@ export default function VantagePoint() {
   }
 
   return (
-    <div className="h-screen w-screen relative overflow-hidden flex font-body">
+    <div className="h-screen w-screen relative overflow-hidden flex font-body bg-[#0F1216]">
       {/* Main Map UI */}
       <main className="flex-1 relative">
         {world && (
@@ -74,12 +97,12 @@ export default function VantagePoint() {
             countries={world.countries} 
             activeOverlays={overlays}
             onSelectCountry={(c) => {
-              setSelectedCountry(c);
+              setSelectedCountryId(c.id);
               setSelectedSettlement(null);
             }}
             onSelectSettlement={(s, c) => {
-              setSelectedSettlement({s, c});
-              setSelectedCountry(c);
+              setSelectedSettlement({s, countryId: c.id});
+              setSelectedCountryId(c.id);
             }}
           />
         )}
@@ -122,6 +145,19 @@ export default function VantagePoint() {
           </Button>
         </div>
 
+        {/* Game Year Display */}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-6 bg-black/40 backdrop-blur-md border border-white/10 px-6 py-2 rounded-full pointer-events-none z-20">
+          <div className="flex flex-col items-center">
+            <span className="text-[10px] text-accent uppercase font-headline">Status</span>
+            <span className="text-xs text-white">READY</span>
+          </div>
+          <div className="h-4 w-px bg-white/10" />
+          <div className="flex flex-col items-center">
+            <span className="text-[10px] text-accent uppercase font-headline">Year</span>
+            <span className="text-xs text-white font-code">{world?.gameYear}.01.01</span>
+          </div>
+        </div>
+
         {/* Legend / Overlay Status */}
         <div className="absolute bottom-6 left-6 bg-black/60 backdrop-blur-md border border-white/10 p-4 rounded-lg flex flex-col gap-2 min-w-[200px]">
           <h4 className="text-[10px] text-accent font-headline uppercase tracking-widest mb-1">Tactical Legend</h4>
@@ -134,18 +170,12 @@ export default function VantagePoint() {
               <div className="h-2 w-2 rounded-full bg-accent" />
               <span className="text-white/70">Strategic Outpost</span>
             </div>
-            {overlays.military && (
-              <div className="flex items-center gap-3 text-xs text-accent animate-pulse">
-                <Shield className="h-3 w-3" />
-                <span>Active Military Reach</span>
-              </div>
-            )}
           </div>
         </div>
       </main>
 
       {/* Context Sidebar */}
-      <aside className="w-[400px] h-full bg-card border-l border-white/10 flex flex-col z-10 shadow-2xl overflow-hidden">
+      <aside className="w-[420px] h-full bg-card border-l border-white/10 flex flex-col z-10 shadow-2xl overflow-hidden">
         {selectedCountry ? (
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="p-6 border-b border-white/5 bg-gradient-to-br from-primary/10 to-transparent">
@@ -171,35 +201,78 @@ export default function VantagePoint() {
             <ScrollArea className="flex-1 p-6">
               <Tabs defaultValue="intel" className="w-full">
                 <TabsList className="w-full bg-secondary/50 border border-white/5 mb-6">
-                  <TabsTrigger value="intel" className="flex-1 text-xs">INTELLIGENCE</TabsTrigger>
+                  <TabsTrigger value="intel" className="flex-1 text-xs">INTEL</TabsTrigger>
+                  <TabsTrigger value="military" className="flex-1 text-xs">MILITARY</TabsTrigger>
                   <TabsTrigger value="diplomacy" className="flex-1 text-xs">DIPLOMACY</TabsTrigger>
-                  <TabsTrigger value="strategic" className="flex-1 text-xs">STRATEGIC</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="intel" className="space-y-6">
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-2 text-accent">
-                      <Zap className="h-4 w-4" />
-                      <h3 className="text-sm font-headline uppercase tracking-wider">Historical Narrative</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-white/5 p-4 rounded-lg border border-white/5 space-y-2">
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Users className="h-3.5 w-3.5" />
+                        <span className="text-[10px] uppercase font-headline">Population</span>
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-xl font-headline text-white">{selectedCountry.stats.population.toFixed(1)}M</span>
+                        <span className="text-[10px] text-green-500 font-code">+{(selectedCountry.stats.growthRate - 1).toFixed(2)}%</span>
+                      </div>
+                      <Progress value={Math.min(100, selectedCountry.stats.population)} className="h-1 bg-white/10" />
                     </div>
-                    <p className="text-sm text-white/80 leading-relaxed font-body italic">
-                      {selectedCountry.lore?.historicalNarrative || "Classified historical data processing..."}
-                    </p>
+                    <div className="bg-white/5 p-4 rounded-lg border border-white/5 space-y-2">
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <TrendingUp className="h-3.5 w-3.5" />
+                        <span className="text-[10px] uppercase font-headline">Economy (GDP)</span>
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-xl font-headline text-white">${selectedCountry.stats.economy.toFixed(0)}B</span>
+                        <span className="text-[10px] text-green-500 font-code">+{(selectedCountry.stats.growthRate - 1).toFixed(2)}%</span>
+                      </div>
+                      <Progress value={Math.min(100, selectedCountry.stats.economy / 10)} className="h-1 bg-white/10" />
+                    </div>
                   </div>
 
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     <div className="flex items-center gap-2 text-accent">
-                      <MapIcon className="h-4 w-4" />
-                      <h3 className="text-sm font-headline uppercase tracking-wider">Demographics</h3>
+                      <Zap className="h-4 w-4" />
+                      <h3 className="text-sm font-headline uppercase tracking-wider">Historical Context</h3>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-white/5 p-3 rounded-md border border-white/5">
-                        <span className="text-[10px] text-muted-foreground uppercase block mb-1">Settlements</span>
-                        <span className="text-lg text-white font-headline">{selectedCountry.settlements.length}</span>
+                    <p className="text-sm text-white/80 leading-relaxed font-body italic border-l-2 border-accent/20 pl-4 py-1">
+                      {selectedCountry.lore?.historicalNarrative || "Analyzing historical archives..."}
+                    </p>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="military" className="space-y-6">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground uppercase font-headline">
+                      <span>Deployment Capability</span>
+                      <span className="text-accent">{(selectedCountry.stats.military.ground + selectedCountry.stats.military.air + selectedCountry.stats.military.naval).toFixed(0)} Units</span>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-[10px] text-white/70 uppercase">
+                          <div className="flex items-center gap-1"><CircleDot className="h-2 w-2 text-green-500" /> Ground Forces</div>
+                          <span>{selectedCountry.stats.military.ground.toFixed(1)}k</span>
+                        </div>
+                        <Progress value={Math.min(100, selectedCountry.stats.military.ground / 3)} className="h-2 bg-white/5" />
                       </div>
-                      <div className="bg-white/5 p-3 rounded-md border border-white/5">
-                        <span className="text-[10px] text-muted-foreground uppercase block mb-1">Influence Area</span>
-                        <span className="text-lg text-white font-headline">{selectedCountry.points.length * 40}km²</span>
+
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-[10px] text-white/70 uppercase">
+                          <div className="flex items-center gap-1"><Plane className="h-3 w-3 text-blue-400" /> Air Command</div>
+                          <span>{selectedCountry.stats.military.air.toFixed(1)}k</span>
+                        </div>
+                        <Progress value={Math.min(100, selectedCountry.stats.military.air)} className="h-2 bg-white/5" />
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-[10px] text-white/70 uppercase">
+                          <div className="flex items-center gap-1"><Anchor className="h-3 w-3 text-accent" /> Naval Fleet</div>
+                          <span>{selectedCountry.stats.military.naval.toFixed(1)}k</span>
+                        </div>
+                        <Progress value={Math.min(100, selectedCountry.stats.military.naval * 2)} className="h-2 bg-white/5" />
                       </div>
                     </div>
                   </div>
@@ -207,14 +280,14 @@ export default function VantagePoint() {
 
                 <TabsContent value="diplomacy" className="space-y-4">
                   {selectedCountry.lore?.diplomaticRelationships.map((rel, idx) => (
-                    <div key={idx} className="bg-secondary/30 border border-white/5 p-4 rounded-lg hover:bg-secondary/50 transition-colors">
+                    <div key={idx} className="bg-secondary/30 border border-white/5 p-4 rounded-lg hover:bg-secondary/50 transition-colors group">
                       <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-headline text-white">{rel.targetCountryName}</span>
+                        <span className="text-sm font-headline text-white group-hover:text-accent transition-colors">{rel.targetCountryName}</span>
                         <Badge variant={rel.type === 'ally' ? 'default' : rel.type === 'enemy' ? 'destructive' : 'secondary'} className="text-[10px] uppercase">
                           {rel.type}
                         </Badge>
                       </div>
-                      <p className="text-xs text-muted-foreground line-clamp-2 italic">{rel.description}</p>
+                      <p className="text-xs text-muted-foreground line-clamp-2 italic leading-relaxed">{rel.description}</p>
                     </div>
                   ))}
                   {!selectedCountry.lore?.diplomaticRelationships.length && (
@@ -223,29 +296,6 @@ export default function VantagePoint() {
                       <p className="text-sm text-muted-foreground">No active diplomatic records found.</p>
                     </div>
                   )}
-                </TabsContent>
-
-                <TabsContent value="strategic" className="space-y-4">
-                  <div className="space-y-2">
-                    {selectedCountry.settlements.map(s => (
-                      <div 
-                        key={s.id} 
-                        className={`flex items-center gap-3 p-3 rounded-md cursor-pointer transition-all border ${
-                          selectedSettlement?.s.id === s.id 
-                            ? 'bg-accent/10 border-accent/50 text-accent' 
-                            : 'bg-white/5 border-transparent text-white/70 hover:bg-white/10'
-                        }`}
-                        onClick={() => setSelectedSettlement({s, c: selectedCountry})}
-                      >
-                        {s.type === 'capital' ? <Building2 className="h-4 w-4" /> : s.type === 'city' ? <MapIcon className="h-4 w-4" /> : <Radio className="h-4 w-4" />}
-                        <div className="flex-1">
-                          <p className="text-xs font-headline uppercase">{s.name}</p>
-                          <p className="text-[10px] opacity-60 uppercase">{s.type}</p>
-                        </div>
-                        <ChevronRight className="h-3 w-3" />
-                      </div>
-                    ))}
-                  </div>
                 </TabsContent>
               </Tabs>
             </ScrollArea>
@@ -257,22 +307,21 @@ export default function VantagePoint() {
             </div>
             <div>
               <h3 className="text-lg font-headline text-white uppercase tracking-widest">Awaiting Command</h3>
-              <p className="text-sm text-muted-foreground max-w-xs mx-auto">
-                Select a territory or tactical settlement on the map to begin intelligence analysis.
+              <p className="text-sm text-muted-foreground max-w-xs mx-auto leading-relaxed">
+                Select a territory on the tactical map to begin real-time intelligence analysis.
               </p>
             </div>
           </div>
         )}
 
-        {/* Global Footer Overlay Information */}
         <div className="p-4 bg-background/80 border-t border-white/5 flex items-center justify-between text-[10px] text-muted-foreground font-code">
           <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1"><div className="h-1.5 w-1.5 rounded-full bg-green-500" /> SYSTEM ONLINE</span>
-            <span>WORLD_ID: VP_ALPHA_74</span>
+            <span className="flex items-center gap-1"><div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" /> SYSTEM ONLINE</span>
+            <span>VER: 2.1.0-STABLE</span>
           </div>
           <div className="flex items-center gap-2">
             <Globe className="h-3 w-3" />
-            <span>VANTAGE POINT COMMAND</span>
+            <span>VANTAGE COMMAND</span>
           </div>
         </div>
       </aside>
