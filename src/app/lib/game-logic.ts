@@ -281,17 +281,32 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
     ? 0.35 + (Math.random() * 0.15) 
     : 0.20 + (Math.random() * 0.10);
 
+  // Capture original loser stats for spoils calculation
+  const originalLoserEconomy = loser.stats.economy;
+  const originalLoserPopulation = loser.stats.population;
+  const originalLoserMilitary = { ...loser.stats.military };
+
+  // Apply losses to winner (Attrition)
   winner.stats.economy *= (1 - winnerAttrition);
   winner.stats.population *= (1 - winnerAttrition * 0.5);
   winner.stats.military.ground *= (1 - winnerAttrition * 1.5);
   winner.stats.military.air *= (1 - winnerAttrition * 1.5);
   winner.stats.military.naval *= (1 - winnerAttrition * 1.2);
 
+  // Apply losses to loser
   loser.stats.economy *= (1 - loserAttrition);
   loser.stats.population *= (1 - loserAttrition * 0.7);
   loser.stats.military.ground *= (1 - loserAttrition * 2.0);
   loser.stats.military.air *= (1 - loserAttrition * 2.0);
   loser.stats.military.naval *= (1 - loserAttrition * 1.8);
+
+  // Transfer "Spoils" to winner (portion of what the loser lost)
+  const lootFactor = 0.4; // 40% of lost resources are gained by winner
+  winner.stats.economy += (originalLoserEconomy - loser.stats.economy) * lootFactor;
+  winner.stats.population += (originalLoserPopulation - loser.stats.population) * lootFactor;
+  winner.stats.military.ground += (originalLoserMilitary.ground - loser.stats.military.ground) * lootFactor * 0.5;
+  winner.stats.military.air += (originalLoserMilitary.air - loser.stats.military.air) * lootFactor * 0.5;
+  winner.stats.military.naval += (originalLoserMilitary.naval - loser.stats.military.naval) * lootFactor * 0.5;
 
   winner.recoveryEndYear = state.gameYear + 5;
   winner.boomEndYear = state.gameYear + 15;
@@ -387,6 +402,7 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
 export function executeAllianceWar(state: GameState): GameState {
   if (state.alliances.length < 2) return state;
 
+  // 1. Calculate combined power for all alliances
   const alliancePowers = state.alliances.map(a => {
     let combinedEconomy = 0;
     let combinedPopulation = 0;
@@ -409,10 +425,19 @@ export function executeAllianceWar(state: GameState): GameState {
     return { id: a.id, power, countryIds: a.countryIds };
   });
 
+  // 2. Identify winning alliance
   const winnerAlliance = [...alliancePowers].sort((a, b) => b.power - a.power)[0];
   const winnerRef = state.alliances.find(a => a.id === winnerAlliance.id)!;
 
   let nextState = { ...state };
+
+  // 3. Resolve conflicts for each loser country
+  // We pool the "spoils" here to distribute them at the end
+  let totalLootedEconomy = 0;
+  let totalLootedPopulation = 0;
+  let totalLootedGround = 0;
+  let totalLootedAir = 0;
+  let totalLootedNaval = 0;
 
   state.alliances.forEach(a => {
     if (a.id === winnerAlliance.id) return;
@@ -422,10 +447,44 @@ export function executeAllianceWar(state: GameState): GameState {
       if (!loserC) return;
       
       const receiverCid = winnerRef.countryIds[Math.floor(Math.random() * winnerRef.countryIds.length)];
+      
+      // Calculate what loser will lose
+      const isLoserVulnerable = loserC.recoveryEndYear && nextState.gameYear <= loserC.recoveryEndYear;
+      const loserAttrition = isLoserVulnerable ? 0.4 : 0.25;
+
+      totalLootedEconomy += loserC.stats.economy * loserAttrition * 0.4;
+      totalLootedPopulation += loserC.stats.population * loserAttrition * 0.4;
+      totalLootedGround += loserC.stats.military.ground * loserAttrition * 0.2;
+      totalLootedAir += loserC.stats.military.air * loserAttrition * 0.2;
+      totalLootedNaval += loserC.stats.military.naval * loserAttrition * 0.2;
+
       const res = executeBattle(nextState, receiverCid, loserC.id, receiverCid);
       nextState = res.state;
     });
   });
+
+  // 4. Distribute pooled spoils among all members of the winning alliance
+  const memberCount = winnerRef.countryIds.length;
+  if (memberCount > 0) {
+    nextState.countries = nextState.countries.map(c => {
+      if (winnerRef.countryIds.includes(c.id)) {
+        return {
+          ...c,
+          stats: {
+            ...c.stats,
+            economy: c.stats.economy + (totalLootedEconomy / memberCount),
+            population: c.stats.population + (totalLootedPopulation / memberCount),
+            military: {
+              ground: c.stats.military.ground + (totalLootedGround / memberCount),
+              air: c.stats.military.air + (totalLootedAir / memberCount),
+              naval: c.stats.military.naval + (totalLootedNaval / memberCount),
+            }
+          }
+        };
+      }
+      return c;
+    });
+  }
 
   return nextState;
 }
