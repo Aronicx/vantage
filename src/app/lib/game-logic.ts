@@ -232,12 +232,9 @@ export function processTick(state: GameState): GameState {
     const stats = { ...c.stats };
     let currentGrowth = stats.growthRate;
 
-    // Post-war effects
     if (c.recoveryEndYear && state.gameYear <= c.recoveryEndYear) {
-      // Recovery phase: Slower growth (struggling nation)
       currentGrowth = 1 + (stats.growthRate - 1) * 0.4;
     } else if (c.boomEndYear && state.gameYear <= c.boomEndYear) {
-      // Boom phase: Accelerated growth from integration
       currentGrowth = 1 + (stats.growthRate - 1) * 1.6;
     }
 
@@ -253,32 +250,37 @@ export function processTick(state: GameState): GameState {
   return { ...state, countries: updatedCountries, gameYear: state.gameYear + 1 };
 }
 
-export function executeBattle(state: GameState, id1: string, id2: string): { state: GameState, result: string } {
+export function executeBattle(state: GameState, id1: string, id2: string, forcedWinnerId?: string): { state: GameState, result: string } {
   const c1 = state.countries.find(c => c.id === id1);
   const c2 = state.countries.find(c => c.id === id2);
   if (!c1 || !c2) return { state, result: 'Error' };
 
-  const power1 = c1.stats.military.ground + c1.stats.military.air + (c1.stats.military.naval * 0.5);
-  const power2 = c2.stats.military.ground + c2.stats.military.air + (c2.stats.military.naval * 0.5);
+  let winner: Country;
+  let loser: Country;
+  let ratio: number;
 
-  const variability = 0.9 + Math.random() * 0.2;
-  const power1Adjusted = power1 * variability;
-  
-  const winner = power1Adjusted > power2 ? c1 : c2;
-  const loser = power1Adjusted > power2 ? c2 : c1;
-  const ratio = Math.max(power1, power2) / Math.min(power1, power2);
+  if (forcedWinnerId) {
+    winner = forcedWinnerId === id1 ? c1 : c2;
+    loser = forcedWinnerId === id1 ? c2 : c1;
+    const p1 = c1.stats.military.ground + c1.stats.military.air + (c1.stats.military.naval * 0.5);
+    const p2 = c2.stats.military.ground + c2.stats.military.air + (c2.stats.military.naval * 0.5);
+    ratio = Math.max(p1, p2) / Math.min(p1, p2);
+  } else {
+    const power1 = c1.stats.military.ground + c1.stats.military.air + (c1.stats.military.naval * 0.5);
+    const power2 = c2.stats.military.ground + c2.stats.military.air + (c2.stats.military.naval * 0.5);
+    const variability = 0.9 + Math.random() * 0.2;
+    const power1Adjusted = power1 * variability;
+    winner = power1Adjusted > power2 ? c1 : c2;
+    loser = power1Adjusted > power2 ? c2 : c1;
+    ratio = Math.max(power1, power2) / Math.min(power1, power2);
+  }
 
-  // Is the loser already weakened/recovering from a previous war?
   const isLoserVulnerable = loser.recoveryEndYear && state.gameYear <= loser.recoveryEndYear;
-
-  // Harsher Attrition
-  const winnerAttrition = 0.05 + (Math.random() * 0.05); // 5-10% loss
-  // If loser is vulnerable, attrition is even higher due to collapsed infrastructure
+  const winnerAttrition = 0.05 + (Math.random() * 0.05);
   const loserAttrition = isLoserVulnerable 
-    ? 0.35 + (Math.random() * 0.15) // 35-50% loss if already recovering
-    : 0.20 + (Math.random() * 0.10); // 20-30% immediate loss normally
+    ? 0.35 + (Math.random() * 0.15) 
+    : 0.20 + (Math.random() * 0.10);
 
-  // Apply Immediate Stat Losses
   winner.stats.economy *= (1 - winnerAttrition);
   winner.stats.population *= (1 - winnerAttrition * 0.5);
   winner.stats.military.ground *= (1 - winnerAttrition * 1.5);
@@ -286,24 +288,19 @@ export function executeBattle(state: GameState, id1: string, id2: string): { sta
   winner.stats.military.naval *= (1 - winnerAttrition * 1.2);
 
   loser.stats.economy *= (1 - loserAttrition);
-  loser.stats.population *= (1 - loserAttrition * 0.7); // Losers lose more population (refugees/war deaths)
+  loser.stats.population *= (1 - loserAttrition * 0.7);
   loser.stats.military.ground *= (1 - loserAttrition * 2.0);
   loser.stats.military.air *= (1 - loserAttrition * 2.0);
   loser.stats.military.naval *= (1 - loserAttrition * 1.8);
 
-  // Set Post-War Cycles
-  winner.recoveryEndYear = state.gameYear + 5; // Winner recovers for 5 years
-  winner.boomEndYear = state.gameYear + 15;   // Winner booms until year 15
-  
-  // Loser is marked for recovery (vulnerability period)
+  winner.recoveryEndYear = state.gameYear + 5;
+  winner.boomEndYear = state.gameYear + 15;
   loser.recoveryEndYear = state.gameYear + 10; 
 
-  // Territory Transfer Logic
   let lossPercent = 0.15;
   let resultText = 'Minor border adjustment.';
 
   if (isLoserVulnerable) {
-    // If vulnerable, lose 60-90% of territory immediately
     lossPercent = 0.6 + Math.random() * 0.3;
     resultText = `${loser.name}'s defenses collapsed! Catastrophic territorial loss.`;
   } else {
@@ -342,7 +339,7 @@ export function executeBattle(state: GameState, id1: string, id2: string): { sta
         allianceId: undefined,
         stats: {
            ...loser.stats,
-           economy: loser.stats.economy * 0.4, // Rump states start extremely weak
+           economy: loser.stats.economy * 0.4,
            population: loser.stats.population * 0.4,
            military: {
              ground: loser.stats.military.ground * 0.2,
@@ -350,7 +347,7 @@ export function executeBattle(state: GameState, id1: string, id2: string): { sta
              naval: loser.stats.military.naval * 0.2
            }
         },
-        recoveryEndYear: state.gameYear + 15 // Long recovery for rump states
+        recoveryEndYear: state.gameYear + 15
       };
       
       nextCountries = nextCountries.filter(c => c.id !== loser.id).concat(newCountry);
@@ -363,7 +360,6 @@ export function executeBattle(state: GameState, id1: string, id2: string): { sta
     nextCountries = nextCountries.filter(c => c.id !== loser.id);
   }
 
-  // Recalculate Provinces for entities that changed size significantly
   nextCountries = nextCountries.map(country => {
     if (country.id === winner.id || (isCapitalCaptured && country.id.startsWith('country-rump-'))) {
        const provinceCount = Math.max(2, Math.floor(country.points.length / 50));
@@ -392,11 +388,25 @@ export function executeAllianceWar(state: GameState): GameState {
   if (state.alliances.length < 2) return state;
 
   const alliancePowers = state.alliances.map(a => {
-    const power = a.countryIds.reduce((sum, cid) => {
+    let combinedEconomy = 0;
+    let combinedPopulation = 0;
+    let combinedGround = 0;
+    let combinedAir = 0;
+    let combinedNaval = 0;
+
+    a.countryIds.forEach(cid => {
       const c = state.countries.find(curr => curr.id === cid);
-      return sum + (c ? (c.stats.military.ground + c.stats.military.air + c.stats.military.naval) : 0);
-    }, 0);
-    return { id: a.id, power };
+      if (c) {
+        combinedEconomy += c.stats.economy;
+        combinedPopulation += c.stats.population;
+        combinedGround += c.stats.military.ground;
+        combinedAir += c.stats.military.air;
+        combinedNaval += c.stats.military.naval;
+      }
+    });
+
+    const power = combinedGround + combinedAir + (combinedNaval * 0.5) + (combinedEconomy * 0.1) + combinedPopulation;
+    return { id: a.id, power, countryIds: a.countryIds };
   });
 
   const winnerAlliance = [...alliancePowers].sort((a, b) => b.power - a.power)[0];
@@ -410,8 +420,9 @@ export function executeAllianceWar(state: GameState): GameState {
     a.countryIds.forEach(cid => {
       const loserC = nextState.countries.find(c => c.id === cid);
       if (!loserC) return;
+      
       const receiverCid = winnerRef.countryIds[Math.floor(Math.random() * winnerRef.countryIds.length)];
-      const res = executeBattle(nextState, receiverCid, loserC.id);
+      const res = executeBattle(nextState, receiverCid, loserC.id, receiverCid);
       nextState = res.state;
     });
   });
@@ -429,7 +440,6 @@ export function createAlliance(state: GameState, countryIds: string[]): GameStat
   }, { id: '', power: -1 });
 
   const leader = state.countries.find(c => c.id === strongest.id);
-  
   const color = ['#F9C74F', '#4D908E', '#577590', '#277DA1', '#90BE6D', '#F94144'][state.alliances.length % 6];
   
   const alliance: Alliance = {
