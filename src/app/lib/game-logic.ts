@@ -496,7 +496,7 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
   const winnerPenalty = (5 + (intensity * 10)) * powerScale;
   const loserPenalty = (25 + (intensity * 25)) * powerScale;
 
-  // Apply regional readiness penalties
+  // Apply regional readiness penalties to general populations
   winner.settlements = winner.settlements.map(s => ({
     ...s,
     stats: { ...s.stats, warReadiness: Math.max(25, s.stats.warReadiness - winnerPenalty) }
@@ -528,7 +528,9 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
       ground: targetCity.stats.military.ground * damageFactor,
       air: targetCity.stats.military.air * damageFactor,
       naval: targetCity.stats.military.naval * damageFactor,
-    }
+    },
+    // Heavy localized readiness penalty for the specific captured city
+    warReadiness: Math.max(10, Math.min(25, targetCity.stats.warReadiness - 50))
   };
 
   let capturedCapital = targetCity.type === 'capital';
