@@ -86,18 +86,6 @@ function getDistance(p1: Point, p2: Point): number {
   return Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
 }
 
-function getPointsOnLine(p1: Point, p2: Point, count: number): Point[] {
-  const points: Point[] = [];
-  for (let i = 1; i < count; i++) {
-    const t = i / count;
-    points.push({
-      x: p1.x + (p2.x - p1.x) * t,
-      y: p1.y + (p2.y - p1.y) * t
-    });
-  }
-  return points;
-}
-
 function isCoastal(coords: Point, landPointSet: Set<string>, gridSize: number = 5): boolean {
   const neighbors = [
     {x: coords.x + gridSize, y: coords.y},
