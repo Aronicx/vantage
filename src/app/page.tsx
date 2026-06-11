@@ -597,10 +597,15 @@ export default function VantagePoint() {
           <ScrollArea className="flex-1 bg-white">
             <div className="divide-y divide-black/[0.03]">
               {sortedCountries.map((c, idx) => {
-                const isRecovering = c.stats.warReadiness < 80;
+                const isRecovering = c.recoveryEndYear && world.gameYear < c.recoveryEndYear;
                 const isExhausted = c.stats.warReadiness < 40;
                 const isEditing = editingId === c.id;
                 const currentAlliance = world.alliances.find(a => a.id === c.allianceId);
+
+                // Calculate display growth rate factoring in recovery penalty
+                const baseGrowth = c.stats.growthRate - 1;
+                const penaltyFactor = isRecovering ? (c.points.length < 150 ? 15 : 6) : 1;
+                const displayGrowth = (baseGrowth / penaltyFactor) * 100;
 
                 return (
                   <div key={c.id} className="p-4 space-y-4 hover:bg-black/[0.01] transition-colors group/row">
@@ -715,14 +720,23 @@ export default function VantagePoint() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4 px-1">
+                    <div className="grid grid-cols-3 gap-2 px-1">
                       <div className="space-y-1">
                         <span className="text-[7px] text-muted-foreground uppercase font-bold flex items-center gap-1 tracking-tighter"><TrendingUp className="h-2 w-2" /> Economy</span>
-                        <p className="text-[11px] font-bold font-mono tracking-tighter">${c.stats.economy.toFixed(1)}B</p>
+                        <p className="text-[10px] font-bold font-mono tracking-tighter">${c.stats.economy.toFixed(1)}B</p>
                       </div>
                       <div className="space-y-1">
-                        <span className="text-[7px] text-muted-foreground uppercase font-bold flex items-center gap-1 tracking-tighter"><Users className="h-2 w-2" /> Population</span>
-                        <p className="text-[11px] font-bold font-mono tracking-tighter">{c.stats.population.toFixed(2)}M</p>
+                        <span className="text-[7px] text-muted-foreground uppercase font-bold flex items-center gap-1 tracking-tighter"><Users className="h-2 w-2" /> Pop.</span>
+                        <p className="text-[10px] font-bold font-mono tracking-tighter">{c.stats.population.toFixed(2)}M</p>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[7px] text-muted-foreground uppercase font-bold flex items-center gap-1 tracking-tighter"><Activity className="h-2 w-2" /> Growth</span>
+                        <p className={cn(
+                          "text-[10px] font-bold font-mono tracking-tighter",
+                          isRecovering ? "text-orange-600" : "text-green-600"
+                        )}>
+                          +{displayGrowth.toFixed(1)}%
+                        </p>
                       </div>
                     </div>
 
