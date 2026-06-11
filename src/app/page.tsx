@@ -70,7 +70,6 @@ export default function VantagePoint() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   
-  // Sidebar states
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
 
@@ -91,7 +90,7 @@ export default function VantagePoint() {
 
   useEffect(() => {
     if (world?.gameStarted && !world.isPaused) {
-      const interval = 10000; // Faster ticks for testing, but typically 30s
+      const interval = 10000;
       timerRef.current = setInterval(() => {
         setWorld(prev => prev ? processTick(prev) : null);
       }, interval);
@@ -140,10 +139,8 @@ export default function VantagePoint() {
     } else if (mode === 'split-select') {
       setSelection([c.id]);
     } else {
-      // Normal click opens stats for that country
       setRightSidebarOpen(true);
       setEditingId(null);
-      // Logic to scroll to country in list could go here
     }
   };
 
@@ -244,7 +241,6 @@ export default function VantagePoint() {
 
   return (
     <div className="h-screen w-screen flex flex-col font-body bg-[#F8FAFC] overflow-hidden">
-      {/* Top Status Bar - Slim & Non-Blocking */}
       <header className="h-12 border-b border-black/10 bg-white/95 backdrop-blur-md z-50 flex items-center justify-between px-4 shrink-0 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
@@ -278,7 +274,6 @@ export default function VantagePoint() {
       </header>
 
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Left Action Sidebar - Docks and Resizes Map Area */}
         <aside 
           className={cn(
             "border-r border-black/10 bg-white z-40 transition-all duration-300 flex flex-col shrink-0",
@@ -324,7 +319,6 @@ export default function VantagePoint() {
               </Button>
             </div>
 
-            {/* Contextual Sub-Console for Actions */}
             <div className="px-2 pb-4">
               {mode !== 'none' && (
                 <Card className="rounded-none border-black/10 bg-black/[0.01] shadow-none">
@@ -335,7 +329,6 @@ export default function VantagePoint() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="p-3 space-y-4">
-                    {/* Mode Specific UI content */}
                     {mode.startsWith('battle') && (
                       <div className="space-y-3">
                          <div className="space-y-1">
@@ -449,7 +442,6 @@ export default function VantagePoint() {
           </ScrollArea>
         </aside>
 
-        {/* Floating Toggle for Sidebar when closed */}
         {!leftSidebarOpen && !isMobile && (
           <Button 
             variant="outline" 
@@ -461,7 +453,6 @@ export default function VantagePoint() {
           </Button>
         )}
 
-        {/* Main Map Viewport - Expands to fill available space between Sidebars */}
         <main className="flex-1 bg-[#E5F1F5] relative overflow-hidden flex items-center justify-center">
            <TacticalMap 
             countries={world.countries} 
@@ -470,12 +461,10 @@ export default function VantagePoint() {
             onSelectCountry={handleCountryClick}
           />
 
-          {/* Mobile Floating Actions Dock - Docked to bottom, minimal footprint */}
           {isMobile && (
             <div className="absolute bottom-0 left-0 right-0 p-2 z-40 bg-white/90 backdrop-blur-md border-t border-black/10 flex flex-col gap-2">
                {isModeActive && (
                  <div className="max-h-[30vh] overflow-y-auto no-scrollbar border-b border-black/5 pb-2">
-                   {/* Compact Mobile Consoles */}
                    {mode.startsWith('battle') && (
                       <div className="flex flex-col gap-2">
                         <p className="text-[8px] font-bold uppercase tracking-tight text-center">Tap 2 nations to begin conflict</p>
@@ -531,7 +520,6 @@ export default function VantagePoint() {
           )}
         </main>
 
-        {/* Right Stats Sidebar - Docks and Resizes Map Area */}
         <aside 
           className={cn(
             "border-l border-black/10 bg-white z-40 transition-all duration-300 flex flex-col shrink-0 shadow-2xl md:shadow-none",
@@ -551,8 +539,8 @@ export default function VantagePoint() {
           <ScrollArea className="flex-1 bg-white">
             <div className="divide-y divide-black/[0.03]">
               {sortedCountries.map((c, idx) => {
-                const isRecovering = c.recoveryEndYear && world.gameYear <= c.recoveryEndYear;
-                const isBooming = c.boomEndYear && world.gameYear <= c.boomEndYear && world.gameYear > (c.recoveryEndYear || 0);
+                const isRecovering = c.stats.warReadiness < 80;
+                const isExhausted = c.stats.warReadiness < 40;
                 const isEditing = editingId === c.id;
 
                 return (
@@ -586,7 +574,7 @@ export default function VantagePoint() {
                               ))}
                             </div>
                             <div className="space-y-1 pt-1 border-t border-black/5">
-                              <label className="text-[7px] font-bold uppercase text-muted-foreground block">Hex Color Code</label>
+                              <label className="text-[7px] font-bold uppercase text-muted-foreground block">Hex Code</label>
                               <div className="flex gap-1">
                                 <Input 
                                   type="text" 
@@ -643,23 +631,22 @@ export default function VantagePoint() {
                         )}
                       </div>
                       <div className="flex gap-1 shrink-0">
-                        {isRecovering && (
-                          <Badge variant="outline" className="text-[6px] uppercase font-bold border-yellow-500/50 text-yellow-700 rounded-none bg-yellow-50 px-1 py-0 h-3">
-                            RCV
-                          </Badge>
-                        )}
-                        {isBooming && (
-                          <Badge variant="outline" className="text-[6px] uppercase font-bold border-green-500/50 text-green-700 rounded-none bg-green-50 px-1 py-0 h-3">
-                            BOM
-                          </Badge>
-                        )}
+                        <div className="flex flex-col items-end">
+                          <span className="text-[6px] uppercase font-bold text-muted-foreground">War Readiness</span>
+                          <span className={cn(
+                            "text-[10px] font-bold font-mono",
+                            isExhausted ? "text-red-600" : isRecovering ? "text-orange-600" : "text-green-600"
+                          )}>
+                            {Math.round(c.stats.warReadiness)}%
+                          </span>
+                        </div>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4 px-1">
                       <div className="space-y-1">
                         <span className="text-[7px] text-muted-foreground uppercase font-bold flex items-center gap-1 tracking-tighter"><TrendingUp className="h-2 w-2" /> Economy</span>
-                        <p className={cn("text-[11px] font-bold font-mono tracking-tighter", isBooming && "text-green-600")}>${c.stats.economy.toFixed(1)}B</p>
+                        <p className="text-[11px] font-bold font-mono tracking-tighter">${c.stats.economy.toFixed(1)}B</p>
                       </div>
                       <div className="space-y-1">
                         <span className="text-[7px] text-muted-foreground uppercase font-bold flex items-center gap-1 tracking-tighter"><Users className="h-2 w-2" /> Population</span>
