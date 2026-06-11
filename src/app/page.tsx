@@ -6,22 +6,18 @@ import {
   processTick, 
   executeBattle, 
   createAlliance, 
-  executeAllianceWar, 
   mergeCountries,
   renameCountry,
   updateCountryColor,
   splitCountry,
   disbandAlliance,
-  leaveAlliance,
   POLITICAL_COLORS,
   GameState, 
   Country,
-  BattleMode,
-  Alliance
+  BattleMode
 } from './lib/game-logic';
 import { TacticalMap } from '@/components/game/TacticalMap';
 import { 
-  Shield, 
   Globe,
   Swords,
   TrendingUp,
@@ -33,27 +29,17 @@ import {
   X,
   Users,
   Info,
-  Zap,
   Activity,
   Combine,
-  Type,
   Pencil,
   Check,
   Scissors,
-  Layers,
   ChevronLeft,
   ChevronRight,
-  Menu,
-  ChevronUp,
-  ChevronDown,
-  Palette,
-  LogOut,
-  Hash,
-  Hammer,
-  ArrowRight,
+  Shield,
+  Handshake,
   Map as MapIcon,
-  Flag,
-  Handshake
+  Hammer
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
