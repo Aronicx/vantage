@@ -439,7 +439,10 @@ export default function VantagePoint() {
                     {mode.startsWith('merge') && (
                       <div className="space-y-3">
                          <div className="space-y-2">
-                           <p className="text-[7px] font-bold uppercase text-muted-foreground">Selected Participants</p>
+                           <div className="flex items-center justify-between">
+                            <p className="text-[7px] font-bold uppercase text-muted-foreground">Selected Participants</p>
+                            <span className="text-[7px] font-bold bg-black/5 px-1">{selection.length}</span>
+                           </div>
                            <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
                              {selection.map(id => {
                                const c = world.countries.find(x => x.id === id);
@@ -450,7 +453,7 @@ export default function VantagePoint() {
                                      <div className="w-1.5 h-1.5 shrink-0" style={{ backgroundColor: c.color }} />
                                      <span className="text-[8px] font-bold uppercase truncate">{c.name}</span>
                                    </div>
-                                   {!isNewUnion && selection.length >= 2 && (
+                                   {selection.length === 2 && !isNewUnion && (
                                      <Button 
                                        size="sm" 
                                        variant="outline" 
@@ -469,18 +472,25 @@ export default function VantagePoint() {
 
                          {selection.length >= 2 && (
                            <div className="space-y-3 pt-2 border-t border-black/5">
-                             <div className="flex items-center justify-between">
-                               <label className="text-[7px] font-bold uppercase text-muted-foreground">Union Strategy</label>
-                               <Button 
-                                variant="ghost" 
-                                className={cn("h-5 px-1.5 text-[7px] uppercase font-bold rounded-none border", isNewUnion ? "bg-black text-white" : "bg-white")}
-                                onClick={() => setIsNewUnion(!isNewUnion)}
-                               >
-                                 {isNewUnion ? "New Sovereign" : "Change to New Union"}
-                               </Button>
-                             </div>
+                             {selection.length === 2 ? (
+                               <div className="flex items-center justify-between">
+                                 <label className="text-[7px] font-bold uppercase text-muted-foreground">Union Strategy</label>
+                                 <Button 
+                                  variant="ghost" 
+                                  className={cn("h-5 px-1.5 text-[7px] uppercase font-bold rounded-none border", isNewUnion ? "bg-black text-white" : "bg-white")}
+                                  onClick={() => setIsNewUnion(!isNewUnion)}
+                                 >
+                                   {isNewUnion ? "New Sovereign" : "Change to New Union"}
+                                 </Button>
+                               </div>
+                             ) : (
+                               <div className="flex items-center gap-2 text-blue-600 bg-blue-50 p-2 border border-blue-100">
+                                 <Info className="h-3 w-3 shrink-0" />
+                                 <p className="text-[7px] font-bold uppercase leading-tight">Multilateral mergers always create a new sovereign identity.</p>
+                               </div>
+                             )}
                              
-                             {isNewUnion && (
+                             {(isNewUnion || selection.length > 2) && (
                                <div className="space-y-1.5 animate-in slide-in-from-top-2 duration-200">
                                  <label className="text-[7px] font-bold uppercase text-muted-foreground">Union Identity</label>
                                  <Input 
