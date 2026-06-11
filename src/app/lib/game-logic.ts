@@ -676,28 +676,45 @@ export function updateCountryColor(state: GameState, id: string, newColor: strin
   return { ...state, countries: state.countries.map(c => c.id === id ? { ...c, color: newColor } : c) };
 }
 
-export function mergeCountries(state: GameState, ids: string[], customName: string): GameState {
+export function mergeCountries(state: GameState, ids: string[], dominantId?: string, customName?: string): GameState {
   if (ids.length < 2) return state;
   const participants = state.countries.filter(c => ids.includes(c.id));
-  participants.sort((a,b) => b.stats.economy - a.stats.economy);
   
-  const dominant = participants[0];
-  const mergedId = `merged-${Date.now()}`;
+  // Find identity country: either the provided dominantId or the strongest participant
+  const identityCountry = dominantId 
+    ? (participants.find(c => c.id === dominantId) || participants[0])
+    : [...participants].sort((a,b) => b.stats.economy - a.stats.economy)[0];
+  
+  const mergedId = dominantId || `merged-${Date.now()}`;
   const allPoints = participants.flatMap(p => p.points);
-  const allSettlements = participants.flatMap(p => p.settlements).map(s => ({ ...s, ownerId: mergedId, type: s.type === 'capital' ? 'city' : s.type }));
+  const allSettlements = participants.flatMap(p => p.settlements).map(s => ({ 
+    ...s, 
+    ownerId: mergedId, 
+    type: s.type === 'capital' ? (s.ownerId === identityCountry.id ? 'capital' : 'city') : s.type 
+  }));
+
+  // Consolidate settlements: if somehow there are multiple capitals, ensure only one survives
+  let capitals = allSettlements.filter(s => s.type === 'capital');
+  if (capitals.length > 1) {
+    allSettlements.forEach(s => {
+      if (s.type === 'capital' && s.id !== capitals[0].id) {
+        s.type = 'city';
+      }
+    });
+  }
 
   const merged: Country = {
-    ...dominant,
+    ...identityCountry,
     id: mergedId,
-    name: customName || `United ${dominant.name}`,
+    name: customName || identityCountry.name,
     points: allPoints,
     settlements: allSettlements,
     stats: {
       economy: 0,
       population: 0,
       military: { ground: 0, air: 0, naval: 0 },
-      growthRate: dominant.stats.growthRate,
-      isLandlocked: dominant.stats.isLandlocked,
+      growthRate: identityCountry.stats.growthRate,
+      isLandlocked: identityCountry.stats.isLandlocked,
       warReadiness: 0 
     }
   };

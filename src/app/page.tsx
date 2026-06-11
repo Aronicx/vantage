@@ -48,7 +48,8 @@ import {
   Palette,
   LogOut,
   Hash,
-  Hammer
+  Hammer,
+  ArrowRight
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -73,6 +74,7 @@ export default function VantagePoint() {
   const [battleMode, setBattleMode] = useState<BattleMode>('attacker');
   const [selection, setSelection] = useState<string[]>([]);
   const [mergeName, setMergeName] = useState('');
+  const [isNewUnion, setIsNewUnion] = useState(false);
   const [splitParts, setSplitParts] = useState(2);
   const [splitNames, setSplitNames] = useState<string[]>([]);
   const [splitDistributions, setSplitDistributions] = useState<number[]>([]);
@@ -221,15 +223,26 @@ export default function VantagePoint() {
     toast({ title: "Global Conflict Resolved", description: "Alliances have dissolved and territories have been redistributed." });
   };
 
-  const handleMerge = () => {
+  const handleMerge = (dominantId?: string) => {
     if (selection.length < 2 || !world) return;
-    const finalName = mergeName.trim() || `Union of ${selection.length} States`;
-    const nextWorld = mergeCountries(world, selection, finalName);
+    
+    let finalName = mergeName.trim();
+    if (!dominantId && !finalName) {
+      finalName = `Unified Federation`;
+    }
+
+    const nextWorld = mergeCountries(world, selection, dominantId, finalName);
     setWorld(nextWorld);
     setSelection([]);
     setMergeName('');
+    setIsNewUnion(false);
     setMode('none');
-    toast({ title: "Union Proclaimed", description: `${finalName} has been unified into a single state.` });
+    
+    const desc = dominantId 
+      ? `Merged into ${world.countries.find(c => c.id === dominantId)?.name}.`
+      : `New nation ${finalName} established.`;
+      
+    toast({ title: "Union Proclaimed", description: desc });
   };
 
   const handleSplit = () => {
@@ -374,7 +387,7 @@ export default function VantagePoint() {
               <Button 
                 variant={mode.startsWith('merge') ? "default" : "outline"} 
                 className={cn("w-full justify-start gap-3 h-11 text-[10px] uppercase font-bold rounded-none px-4", mode.startsWith('merge') && "bg-black text-white")}
-                onClick={() => { setMode('merge-menu'); setSelection([]); setMergeName(''); }}
+                onClick={() => { setMode('merge-menu'); setSelection([]); setMergeName(''); setIsNewUnion(false); }}
               >
                 <Combine className="h-4 w-4" /> Territorial Union
               </Button>
@@ -425,26 +438,67 @@ export default function VantagePoint() {
 
                     {mode.startsWith('merge') && (
                       <div className="space-y-3">
-                         <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
-                           {selection.map(id => (
-                             <div key={id} className="text-[8px] font-bold uppercase truncate border-l-2 border-black pl-2 py-1 bg-white">
-                               {world.countries.find(c => c.id === id)?.name}
-                             </div>
-                           ))}
-                           {selection.length === 0 && <p className="text-[8px] text-muted-foreground uppercase italic text-center py-2">Select nations on map</p>}
+                         <div className="space-y-2">
+                           <p className="text-[7px] font-bold uppercase text-muted-foreground">Selected Participants</p>
+                           <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                             {selection.map(id => {
+                               const c = world.countries.find(x => x.id === id);
+                               if (!c) return null;
+                               return (
+                                 <div key={id} className="group flex items-center justify-between p-1.5 border border-black/10 bg-white">
+                                   <div className="flex items-center gap-2 overflow-hidden">
+                                     <div className="w-1.5 h-1.5 shrink-0" style={{ backgroundColor: c.color }} />
+                                     <span className="text-[8px] font-bold uppercase truncate">{c.name}</span>
+                                   </div>
+                                   {!isNewUnion && selection.length >= 2 && (
+                                     <Button 
+                                       size="sm" 
+                                       variant="outline" 
+                                       className="h-5 px-1.5 text-[6px] uppercase font-bold rounded-none hover:bg-black hover:text-white"
+                                       onClick={() => handleMerge(id)}
+                                     >
+                                       Absorb Others
+                                     </Button>
+                                   )}
+                                 </div>
+                               );
+                             })}
+                             {selection.length === 0 && <p className="text-[8px] text-muted-foreground uppercase italic text-center py-2">Select nations on map</p>}
+                           </div>
                          </div>
+
                          {selection.length >= 2 && (
-                           <div className="space-y-1.5">
-                             <label className="text-[7px] font-bold uppercase text-muted-foreground">Union Identity</label>
-                             <Input 
-                               placeholder="e.g. United Federation"
-                               className="h-8 text-[10px] rounded-none border-black/20 focus-visible:ring-black px-2 bg-white"
-                               value={mergeName}
-                               onChange={(e) => setMergeName(e.target.value)}
-                             />
-                             <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none mt-2" disabled={selection.length < 2 || !mergeName.trim()} onClick={handleMerge}>
-                               PROCLAIM UNION
-                             </Button>
+                           <div className="space-y-3 pt-2 border-t border-black/5">
+                             <div className="flex items-center justify-between">
+                               <label className="text-[7px] font-bold uppercase text-muted-foreground">Union Strategy</label>
+                               <Button 
+                                variant="ghost" 
+                                className={cn("h-5 px-1.5 text-[7px] uppercase font-bold rounded-none border", isNewUnion ? "bg-black text-white" : "bg-white")}
+                                onClick={() => setIsNewUnion(!isNewUnion)}
+                               >
+                                 {isNewUnion ? "New Sovereign" : "Change to New Union"}
+                               </Button>
+                             </div>
+                             
+                             {isNewUnion && (
+                               <div className="space-y-1.5 animate-in slide-in-from-top-2 duration-200">
+                                 <label className="text-[7px] font-bold uppercase text-muted-foreground">Union Identity</label>
+                                 <Input 
+                                   placeholder="e.g. Greater Republic"
+                                   className="h-8 text-[10px] rounded-none border-black/20 focus-visible:ring-black px-2 bg-white"
+                                   value={mergeName}
+                                   onChange={(e) => setMergeName(e.target.value)}
+                                 />
+                                 <Button 
+                                   size="sm" 
+                                   className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none mt-2" 
+                                   disabled={!mergeName.trim()} 
+                                   onClick={() => handleMerge()}
+                                 >
+                                   ESTABLISH UNION
+                                 </Button>
+                               </div>
+                             )}
                            </div>
                          )}
                       </div>
