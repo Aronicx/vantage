@@ -457,7 +457,6 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
   const landSet = new Set(state.landPointSet);
   const gridSize = 5;
 
-  // Determine if any member of party 1 shares a border with any member of party 2
   let hasLandBorder = false;
   for (const c1 of p1Countries) {
     for (const c2 of p2Countries) {
@@ -481,15 +480,12 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
     const avgReadiness = countries.reduce((sum, c) => sum + c.stats.warReadiness, 0) / countries.length;
 
     countries.forEach(c => {
-      // Land units only contribute if there's a border or they are defending
       let ground = (hasLandBorder || isDefending) ? c.stats.military.ground : 0;
       let air = c.stats.military.air;
       let naval = c.stats.isLandlocked ? 0 : c.stats.military.naval;
 
-      // Distance-based air/naval effectiveness (simplified for asymmetric)
       let effectiveness = 1.0;
       if (!hasLandBorder && isAttacking) {
-        // Find closest enemy center
         let minDist = Infinity;
         targetParty.forEach(tp => {
           const d = getDistance(c.center, tp.center);
@@ -504,7 +500,6 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
         (c.stats.economy * 0.15) + (c.stats.population * 2)
       ) * (0.4 + (avgReadiness / 100) * 0.6);
 
-      // Defenses (Special bonus if capital is in the party and we are defending)
       if (isDefending) {
         const hasCapital = c.settlements.some(s => s.type === 'capital');
         base *= (1.8 * (hasCapital ? 2.5 : 1.0));
@@ -529,7 +524,6 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
   const baseWinPenalty = (5 + intensity * 10) * powerScale;
   const baseLosePenalty = (20 + intensity * 25) * powerScale;
 
-  // Apply penalties to all members of both parties
   const applyPenalties = (countries: Country[], penalty: number) => {
     countries.forEach(c => {
       c.settlements = c.settlements.map(s => ({
@@ -545,10 +539,8 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
 
   const isWinnerAttacking = (winnerPartyId === id1 && isAttacker1) || (winnerPartyId === id2 && isAttacker2);
   
-  // Decide which city is target for capture (from a random loser)
   const loserTargetCountry = loserCountries[Math.floor(Math.random() * loserCountries.length)];
   const targetCity = loserTargetCountry.settlements.sort((a,b) => {
-    // Distance to winner party average center
     const winAvgCenter = {
       x: winnerCountries.reduce((s,c) => s+c.center.x, 0) / winnerCountries.length,
       y: winnerCountries.reduce((s,c) => s+c.center.y, 0) / winnerCountries.length
@@ -569,7 +561,6 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
     };
   }
 
-  // Handle Capture
   const damageFactor = 0.7;
   targetCity.stats = {
     ...targetCity.stats,
@@ -589,15 +580,12 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
     loserTargetCountry.recoveryEndYear = state.gameYear + 25;
   }
 
-  // Assign to the CLOSEST winner country
   const bestWinner = [...winnerCountries].sort((a, b) => getDistance(a.center, targetCity.coords) - getDistance(b.center, targetCity.coords))[0];
   targetCity.ownerId = bestWinner.id;
   
-  // Update the actual arrays
   bestWinner.settlements.push(targetCity);
   loserTargetCountry.settlements = loserTargetCountry.settlements.filter(s => s.id !== targetCity.id);
 
-  // Transfer points
   const transferred: Point[] = [];
   const remaining: Point[] = [];
   loserTargetCountry.points.forEach(p => {
@@ -619,7 +607,6 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
   let nextCountries = state.countries.map(c => {
     if (c.id === bestWinner.id) return bestWinner;
     if (c.id === loserTargetCountry.id) return loserTargetCountry;
-    // Check if other members were updated (penalties)
     const p1Match = p1Countries.find(x => x.id === c.id);
     if (p1Match) return p1Match;
     const p2Match = p2Countries.find(x => x.id === c.id);
@@ -627,7 +614,6 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
     return c;
   });
 
-  // Cleanup collapsed nations
   if (loserTargetCountry.points.length < 20 || loserTargetCountry.settlements.length === 0) {
     nextCountries = nextCountries.filter(c => c.id !== loserTargetCountry.id);
   }
