@@ -374,34 +374,25 @@ export function processTick(state: GameState): GameState {
     let growth = c.stats.growthRate * (0.999 + Math.random() * 0.002);
     
     // 2. National Reconstruction System
-    // Calculate total economy and identify damaged areas
     const totalEcon = c.stats.economy;
     const damagedSettlements = c.settlements.filter(s => s.stats.warReadiness < 100);
     const totalReadinessDeficit = damagedSettlements.reduce((sum, s) => sum + (100 - s.stats.warReadiness), 0);
     
-    // Reconstruction Fund: Tax a portion of the economy to rebuild
-    // Higher total economy = faster reconstruction
-    const reconTaxRate = totalReadinessDeficit > 0 ? 0.04 : 0; // 4% of growth is diverted if repairs are needed
+    const reconTaxRate = totalReadinessDeficit > 0 ? 0.04 : 0; 
     const reconFund = totalEcon * reconTaxRate;
     
     const nextSettlements = c.settlements.map(s => {
       let cityGrowth = growth;
-      let cityReadinessGain = 10; // Base regional recovery
+      let cityReadinessGain = 10; 
 
-      // If city is damaged, apply reconstruction benefits funded by the state
       if (s.stats.warReadiness < 100) {
-        // Proportion of reconstruction fund allocated to this city
         const share = (100 - s.stats.warReadiness) / (totalReadinessDeficit || 1);
         const allocatedBudget = reconFund * share;
-        
-        // Reconstruction boosts growth significantly
-        // The more budget allocated (from a strong economy), the faster the recovery
         const reconBoost = Math.log10(Math.max(1, allocatedBudget + 1)) * 1.5;
         cityGrowth *= (1 + (reconBoost / 100));
         cityReadinessGain += (reconBoost * 5);
       }
 
-      // Penalty for losing capital still applies but can be offset by strong reconstruction
       if (c.recoveryEndYear && state.gameYear < c.recoveryEndYear) {
         const isVerySmall = c.points.length < 150;
         const penaltyFactor = isVerySmall ? 15 : 6; 
@@ -528,7 +519,6 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
   const winnerPenalty = (5 + (intensity * 10)) * powerScale;
   const loserPenalty = (25 + (intensity * 25)) * powerScale;
 
-  // Apply regional readiness penalties to general populations
   winner.settlements = winner.settlements.map(s => ({
     ...s,
     stats: { ...s.stats, warReadiness: Math.max(25, s.stats.warReadiness - winnerPenalty) }
@@ -561,7 +551,6 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
       air: targetCity.stats.military.air * damageFactor,
       naval: targetCity.stats.military.naval * damageFactor,
     },
-    // Heavy localized readiness penalty for the specific captured city
     warReadiness: Math.max(10, Math.min(25, targetCity.stats.warReadiness - 50))
   };
 
@@ -676,7 +665,7 @@ export function mergeCountries(state: GameState, ids: string[], customName: stri
       military: { ground: 0, air: 0, naval: 0 },
       growthRate: dominant.stats.growthRate,
       isLandlocked: dominant.stats.isLandlocked,
-      warReadiness: 0 // Will be aggregated
+      warReadiness: 0 
     }
   };
 
@@ -689,31 +678,65 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
   const target = state.countries.find(c => c.id === targetId);
   if (!target || parts < 2) return state;
 
-  const partitions: Point[][] = Array.from({ length: parts }, () => []);
+  const totalPoints = target.points.length;
   const seeds: Point[] = [];
-  for(let i=0; i<parts; i++) {
-    seeds.push(target.points[Math.floor(Math.random() * target.points.length)]);
+  const pointPartitions: Point[][] = Array.from({ length: parts }, () => []);
+  
+  // 1. Determine target point counts for each splinter based on distributions
+  const quotas = distributions.map(d => Math.floor(totalPoints * (d / 100)));
+
+  // 2. Select seeds from existing settlements or random points
+  for (let i = 0; i < parts; i++) {
+    const seedIdx = Math.floor((i / parts) * target.points.length);
+    seeds.push(target.points[seedIdx]);
   }
 
+  // 3. Greedy Territory Expansion: Proportional land area assignment
+  // We sort points by their closest seed and assign them until quotas are reached
+  const pointOptions: { p: Point, sIdx: number, dist: number }[] = [];
   target.points.forEach(p => {
-    let best = 0;
-    let minWeightedDist = Infinity;
-    seeds.forEach((s, idx) => {
-      const weight = distributions[idx] || 1;
-      const d = getDistance(p, s) / (weight + 0.1); 
-      if (d < minWeightedDist) { minWeightedDist = d; best = idx; }
+    seeds.forEach((s, sIdx) => {
+      pointOptions.push({ p, sIdx, dist: getDistance(p, s) });
     });
-    partitions[best].push(p);
+  });
+
+  pointOptions.sort((a, b) => a.dist - b.dist);
+
+  const assignedPointSet = new Set<string>();
+  const counts = new Array(parts).fill(0);
+
+  for (const option of pointOptions) {
+    const key = `${option.p.x},${option.p.y}`;
+    if (!assignedPointSet.has(key) && counts[option.sIdx] < quotas[option.sIdx]) {
+      pointPartitions[option.sIdx].push(option.p);
+      assignedPointSet.add(key);
+      counts[option.sIdx]++;
+    }
+  }
+
+  // Cleanup: Assign any remaining points to the nearest non-full partition
+  target.points.forEach(p => {
+    const key = `${p.x},${p.y}`;
+    if (!assignedPointSet.has(key)) {
+      let bestIdx = 0;
+      let minDist = Infinity;
+      seeds.forEach((s, sIdx) => {
+        const d = getDistance(p, s);
+        if (d < minDist) { minDist = d; bestIdx = sIdx; }
+      });
+      pointPartitions[bestIdx].push(p);
+    }
   });
 
   const landSet = new Set(state.landPointSet);
-  const nextCountries: Country[] = partitions.map((pts, i) => {
+  const nextCountries: Country[] = pointPartitions.map((pts, i) => {
     const name = successorNames[i] || `${target.name} Splinter ${i+1}`;
     const id = `splinter-${targetId}-${i}-${Date.now()}`;
-    const distFactor = (distributions[i] || (100 / parts)) / 100;
+    const distFactor = (distributions[i] || 1) / 100;
     
     const ptSet = new Set(pts.map(p => `${p.x},${p.y}`));
     
+    // Proportional Stat Scaling: Cities in this territory receive a share of original nation's power
     const splinterSettlements = target.settlements
       .filter(s => ptSet.has(`${s.coords.x},${s.coords.y}`))
       .map(s => ({ 
@@ -749,7 +772,7 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
         },
         growthRate: target.stats.growthRate,
         isLandlocked: target.stats.isLandlocked,
-        warReadiness: 0 // Aggregated
+        warReadiness: 0 
       }
     };
     return rebuildCountryMetadata(country, landSet, 5);
