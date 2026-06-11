@@ -46,7 +46,8 @@ import {
   ChevronUp,
   ChevronDown,
   Palette,
-  LogOut
+  LogOut,
+  Hash
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -73,6 +74,7 @@ export default function VantagePoint() {
   const [mergeName, setMergeName] = useState('');
   const [splitParts, setSplitParts] = useState(2);
   const [splitNames, setSplitNames] = useState<string[]>([]);
+  const [splitDistributions, setSplitDistributions] = useState<number[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   
@@ -116,6 +118,16 @@ export default function VantagePoint() {
       }
       return next;
     });
+    setSplitDistributions(prev => {
+      const next = [...prev];
+      if (next.length < splitParts) {
+        const equalShare = Math.floor(100 / splitParts);
+        for (let i = next.length; i < splitParts; i++) next.push(equalShare);
+      } else {
+        return next.slice(0, splitParts);
+      }
+      return next;
+    });
   }, [splitParts]);
 
   const initWorld = async () => {
@@ -130,7 +142,6 @@ export default function VantagePoint() {
   };
 
   const handleCountryClick = (c: Country) => {
-    // Battle Selection (Max 2)
     if (mode === 'battle-select' || mode === 'battle-menu') {
       if (selection.includes(c.id)) {
         setSelection(selection.filter(id => id !== c.id));
@@ -138,7 +149,6 @@ export default function VantagePoint() {
         setSelection([...selection, c.id]);
       }
     } 
-    // Multi-select for War and Merge modes
     else if (mode === 'war-select' || mode === 'war-menu') {
       if (selection.includes(c.id)) {
         setSelection(selection.filter(id => id !== c.id));
@@ -157,7 +167,6 @@ export default function VantagePoint() {
         setSelection([...selection, c.id]);
       }
     } 
-    // Single select for Partition/Split
     else if (mode === 'split-select' || mode === 'split-menu') {
       if (selection.includes(c.id)) {
         setSelection([]);
@@ -165,7 +174,6 @@ export default function VantagePoint() {
         setSelection([c.id]);
       }
     } 
-    // Default interaction: Open Stats
     else {
       setRightSidebarOpen(true);
       setEditingId(null);
@@ -230,12 +238,18 @@ export default function VantagePoint() {
       toast({ variant: "destructive", title: "Incomplete Data", description: "Please provide names for all successor states." });
       return;
     }
-    const nextWorld = splitCountry(world, selection[0], splitParts, splitNames);
+    const sum = splitDistributions.reduce((s, v) => s + v, 0);
+    if (Math.abs(sum - 100) > 0.1) {
+      toast({ variant: "destructive", title: "Allocation Error", description: "The distribution sum must equal exactly 100%." });
+      return;
+    }
+    const nextWorld = splitCountry(world, selection[0], splitParts, splitNames, splitDistributions);
     setWorld(nextWorld);
     setSelection([]);
     setSplitNames([]);
+    setSplitDistributions([]);
     setMode('none');
-    toast({ title: "Nation Partitioned", description: `The territory has been divided into ${splitParts} new sovereign entities.` });
+    toast({ title: "Nation Partitioned", description: `The territory and stats have been divided according to your specifications.` });
   };
 
   const handleSaveRename = () => {
@@ -278,8 +292,6 @@ export default function VantagePoint() {
       </div>
     );
   }
-
-  const isModeActive = mode !== 'none' && mode !== 'stats-panel';
 
   return (
     <div className="h-screen w-screen flex flex-col font-body bg-[#F8FAFC] overflow-hidden">
@@ -355,9 +367,9 @@ export default function VantagePoint() {
               <Button 
                 variant={mode.startsWith('split') ? "default" : "outline"} 
                 className={cn("w-full justify-start gap-3 h-11 text-[10px] uppercase font-bold rounded-none px-4", mode.startsWith('split') && "bg-black text-white")}
-                onClick={() => { setMode('split-menu'); setSelection([]); setSplitParts(2); setSplitNames(["", ""]); }}
+                onClick={() => { setMode('split-menu'); setSelection([]); setSplitParts(2); }}
               >
-                <Scissors className="h-4 w-4" /> State Partition
+                <Scissors className="h-4 w-4" /> Advanced Split
               </Button>
             </div>
 
@@ -427,7 +439,7 @@ export default function VantagePoint() {
                     {mode.startsWith('split') && (
                       <div className="space-y-3">
                         {selection.length === 1 ? (
-                          <div className="space-y-3">
+                          <div className="space-y-4">
                             <div className="text-[9px] font-bold uppercase truncate border-l-2 border-black pl-2 py-1 bg-white">
                               {world.countries.find(c => c.id === selection[0])?.name}
                             </div>
@@ -436,19 +448,48 @@ export default function VantagePoint() {
                                 <span>Successors</span>
                                 <span className="text-black text-[10px]">{splitParts}</span>
                               </div>
-                              <Slider value={[splitParts]} onValueChange={(val) => setSplitParts(val[0])} min={2} max={6} step={1} className="py-1" />
+                              <Slider value={[splitParts]} onValueChange={(val) => setSplitParts(val[0])} min={2} max={5} step={1} className="py-1" />
                             </div>
-                            <div className="space-y-2">
+                            <div className="space-y-3">
+                              <p className="text-[7px] font-bold uppercase text-muted-foreground border-b border-black/5 pb-1">Successor Configuration</p>
                               {Array.from({ length: splitParts }).map((_, i) => (
-                                <Input key={i} placeholder={`Successor ${i + 1}`} className="h-7 text-[10px] rounded-none border-black/15 bg-white px-2" value={splitNames[i] || ""} onChange={(e) => {
-                                  const next = [...splitNames];
-                                  next[i] = e.target.value;
-                                  setSplitNames(next);
-                                }} />
+                                <div key={i} className="space-y-1.5 p-2 bg-black/[0.02] border border-black/[0.05]">
+                                  <div className="flex gap-2">
+                                    <Input placeholder={`Name ${i + 1}`} className="h-7 text-[9px] rounded-none border-black/15 bg-white px-2 flex-1" value={splitNames[i] || ""} onChange={(e) => {
+                                      const next = [...splitNames];
+                                      next[i] = e.target.value;
+                                      setSplitNames(next);
+                                    }} />
+                                    <div className="w-16 flex items-center gap-1 bg-white border border-black/15 px-1.5">
+                                      <Hash className="h-2 w-2 text-muted-foreground" />
+                                      <Input 
+                                        type="number" 
+                                        className="h-6 text-[9px] p-0 border-0 focus-visible:ring-0 text-right font-mono"
+                                        value={splitDistributions[i] || 0}
+                                        onChange={(e) => {
+                                          const val = parseInt(e.target.value) || 0;
+                                          const next = [...splitDistributions];
+                                          next[i] = Math.min(100, Math.max(0, val));
+                                          setSplitDistributions(next);
+                                        }}
+                                      />
+                                      <span className="text-[8px] font-mono">%</span>
+                                    </div>
+                                  </div>
+                                </div>
                               ))}
+                              <div className="flex justify-between items-center px-1">
+                                <span className="text-[7px] font-bold uppercase text-muted-foreground">Total Allocation</span>
+                                <span className={cn(
+                                  "text-[10px] font-bold font-mono",
+                                  Math.abs(splitDistributions.reduce((s,v)=>s+v,0) - 100) > 0.1 ? "text-red-500" : "text-green-600"
+                                )}>
+                                  {splitDistributions.reduce((s,v)=>s+v,0)}%
+                                </span>
+                              </div>
                             </div>
-                            <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none" disabled={loading || splitNames.some(n => !n.trim())} onClick={handleSplit}>
-                              PARTITION
+                            <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none" disabled={loading || splitNames.some(n => !n.trim()) || Math.abs(splitDistributions.reduce((s,v)=>s+v,0) - 100) > 0.1} onClick={handleSplit}>
+                              EXECUTE PARTITION
                             </Button>
                           </div>
                         ) : (
@@ -535,96 +576,6 @@ export default function VantagePoint() {
             selection={selection}
             onSelectCountry={handleCountryClick}
           />
-
-          {isMobile && (
-            <div className="absolute bottom-0 left-0 right-0 p-2 z-40 bg-white/90 backdrop-blur-md border-t border-black/10 flex flex-col gap-2">
-               {isModeActive && (
-                 <div className="max-h-[35vh] overflow-y-auto no-scrollbar border-b border-black/5 pb-2 px-1">
-                   {mode.startsWith('battle') && (
-                      <div className="flex flex-col gap-3">
-                        <div className="space-y-1.5">
-                           <label className="text-[8px] font-bold uppercase text-muted-foreground block text-center">War Mode</label>
-                           <Tabs value={battleMode} onValueChange={(val) => setBattleMode(val as BattleMode)}>
-                             <TabsList className="grid grid-cols-3 h-9 p-1 rounded-none bg-black/5">
-                               <TabsTrigger value="attacker" className="text-[9px] uppercase font-bold rounded-none">Attack</TabsTrigger>
-                               <TabsTrigger value="defender" className="text-[9px] uppercase font-bold rounded-none">Defend</TabsTrigger>
-                               <TabsTrigger value="mutual" className="text-[9px] uppercase font-bold rounded-none">Mutual</TabsTrigger>
-                             </TabsList>
-                           </Tabs>
-                         </div>
-                        <p className="text-[8px] font-bold uppercase tracking-tight text-center">Tap 2 nations on map</p>
-                        <div className="flex gap-1 justify-center flex-wrap">
-                          {selection.map(id => (
-                            <Badge key={id} variant="outline" className="text-[7px] uppercase font-bold rounded-none px-2 py-0.5">
-                              {world.countries.find(c => c.id === id)?.name}
-                            </Badge>
-                          ))}
-                        </div>
-                        <Button size="sm" className="h-10 text-[9px] font-bold uppercase bg-black text-white" disabled={selection.length !== 2} onClick={startBattle}>
-                          Execute {battleMode} Protocol
-                        </Button>
-                      </div>
-                   )}
-                   {mode.startsWith('merge') && (
-                      <div className="flex flex-col gap-2">
-                        <Input 
-                          placeholder="Union Name..." 
-                          className="h-9 text-[10px] rounded-none border-black/15 bg-white px-2"
-                          value={mergeName}
-                          onChange={(e) => setMergeName(e.target.value)}
-                        />
-                        <Button size="sm" className="h-9 text-[9px] font-bold uppercase bg-black text-white" disabled={selection.length < 2 || !mergeName.trim()} onClick={handleMerge}>
-                          Unify {selection.length} States
-                        </Button>
-                      </div>
-                   )}
-                   {mode.startsWith('split') && (
-                     <div className="space-y-2">
-                       {selection.length === 1 ? (
-                         <>
-                           <Slider value={[splitParts]} onValueChange={(val) => setSplitParts(val[0])} min={2} max={6} step={1} />
-                           <Button size="sm" className="w-full h-9 text-[9px] font-bold uppercase bg-black text-white" disabled={splitNames.some(n => !n.trim())} onClick={handleSplit}>
-                             Partition into {splitParts}
-                           </Button>
-                         </>
-                       ) : (
-                         <p className="text-[8px] font-bold uppercase text-center py-2">Select a nation to split</p>
-                       )}
-                     </div>
-                   )}
-                   {mode.startsWith('war') && (
-                      <div className="flex flex-col gap-2">
-                        {mode === 'war-select' ? (
-                          <>
-                            <p className="text-[8px] font-bold uppercase text-center">Tap independent countries</p>
-                            <Button size="sm" className="h-10 text-[9px] font-bold uppercase bg-black text-white" disabled={selection.length < 2} onClick={confirmAlliance}>Confirm Bloc ({selection.length})</Button>
-                          </>
-                        ) : (
-                          <>
-                             <div className="flex gap-1 overflow-x-auto py-1">
-                               {world.alliances.map(a => (
-                                 <Badge key={a.id} className="shrink-0 flex gap-2 items-center" style={{ backgroundColor: a.color }}>
-                                   {a.name} <X className="h-3 w-3" onClick={() => handleDisbandAlliance(a.id)} />
-                                 </Badge>
-                               ))}
-                             </div>
-                             <Button size="sm" className="h-8 text-[9px] font-bold uppercase bg-black text-white" onClick={() => { setMode('war-select'); setSelection([]); }}>New Alliance</Button>
-                             {world.alliances.length >= 2 && <Button size="sm" variant="destructive" className="h-8 text-[9px] font-bold uppercase" onClick={executeWar}>Global War</Button>}
-                          </>
-                        )}
-                      </div>
-                   )}
-                 </div>
-               )}
-               
-               <div className="flex gap-1 overflow-x-auto no-scrollbar py-1">
-                 <Button variant="outline" className={cn("shrink-0 h-9 px-3 text-[9px] font-bold uppercase rounded-none", mode.startsWith('battle') && "bg-black text-white")} onClick={() => { setMode('battle-menu'); setSelection([]); }}><Swords className="h-3 w-3 mr-1.5" /> Battle</Button>
-                 <Button variant="outline" className={cn("shrink-0 h-9 px-3 text-[9px] font-bold uppercase rounded-none", mode.startsWith('war') && "bg-black text-white")} onClick={() => { setMode('war-menu'); setSelection([]); }}><Shield className="h-3 w-3 mr-1.5" /> War</Button>
-                 <Button variant="outline" className={cn("shrink-0 h-9 px-3 text-[9px] font-bold uppercase rounded-none", mode.startsWith('merge') && "bg-black text-white")} onClick={() => { setMode('merge-menu'); setSelection([]); setMergeName(''); }}><Combine className="h-3 w-3 mr-1.5" /> Merge</Button>
-                 <Button variant="outline" className={cn("shrink-0 h-9 px-3 text-[9px] font-bold uppercase rounded-none", mode.startsWith('split') && "bg-black text-white")} onClick={() => { setMode('split-menu'); setSelection([]); }}><Scissors className="h-3 w-3 mr-1.5" /> Split</Button>
-               </div>
-            </div>
-          )}
         </main>
 
         <aside 

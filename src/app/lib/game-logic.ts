@@ -101,8 +101,8 @@ function isCoastal(coords: Point, landPointSet: Set<string>, gridSize: number = 
   const neighbors = [
     {x: coords.x + gridSize, y: coords.y},
     {x: coords.x - gridSize, y: coords.y},
-    {x: coords.x, y: coords.y + gridSize},
-    {x: coords.x, y: coords.y - gridSize}
+    {x: coords.x, y: gridSize},
+    {x: coords.x, y: -gridSize}
   ];
   return neighbors.some(n => !landPointSet.has(`${n.x},${n.y}`));
 }
@@ -630,7 +630,7 @@ export function mergeCountries(state: GameState, ids: string[], customName: stri
   return { ...state, countries: state.countries.filter(c => !ids.includes(c.id)).concat(final) };
 }
 
-export function splitCountry(state: GameState, targetId: string, parts: number, successorNames: string[]): GameState {
+export function splitCountry(state: GameState, targetId: string, parts: number, successorNames: string[], distributions: number[]): GameState {
   const target = state.countries.find(c => c.id === targetId);
   if (!target || parts < 2) return state;
 
@@ -640,12 +640,16 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
     seeds.push(target.points[Math.floor(Math.random() * target.points.length)]);
   }
 
+  // Weighted Voronoi splitting for territory distribution
   target.points.forEach(p => {
     let best = 0;
-    let minDist = Infinity;
+    let minWeightedDist = Infinity;
     seeds.forEach((s, idx) => {
-      const d = getDistance(p, s);
-      if (d < minDist) { minDist = d; best = idx; }
+      // Weight the distance by the distribution percentage
+      // Higher percentage -> lower weighted distance -> attracts more points
+      const weight = distributions[idx] || 1;
+      const d = getDistance(p, s) / (weight + 0.1); 
+      if (d < minWeightedDist) { minWeightedDist = d; best = idx; }
     });
     partitions[best].push(p);
   });
@@ -654,11 +658,27 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
   const nextCountries: Country[] = partitions.map((pts, i) => {
     const name = successorNames[i] || `${target.name} Splinter ${i+1}`;
     const id = `splinter-${targetId}-${i}-${Date.now()}`;
+    const distFactor = (distributions[i] || (100 / parts)) / 100;
     
     const ptSet = new Set(pts.map(p => `${p.x},${p.y}`));
+    
+    // Distribute and scale settlements stats
     const splinterSettlements = target.settlements
       .filter(s => ptSet.has(`${s.coords.x},${s.coords.y}`))
-      .map(s => ({ ...s, ownerId: id, type: 'city' as const }));
+      .map(s => ({ 
+        ...s, 
+        ownerId: id, 
+        type: 'city' as const,
+        stats: {
+          economy: s.stats.economy * distFactor,
+          population: s.stats.population * distFactor,
+          military: {
+            ground: s.stats.military.ground * distFactor,
+            air: s.stats.military.air * distFactor,
+            naval: s.stats.military.naval * distFactor,
+          }
+        }
+      }));
 
     const country: Country = {
       ...target,
@@ -668,9 +688,13 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
       points: pts,
       settlements: splinterSettlements,
       stats: {
-        economy: 0,
-        population: 0,
-        military: { ground: 0, air: 0, naval: 0 },
+        economy: target.stats.economy * distFactor,
+        population: target.stats.population * distFactor,
+        military: {
+          ground: target.stats.military.ground * distFactor,
+          air: target.stats.military.air * distFactor,
+          naval: target.stats.military.naval * distFactor,
+        },
         growthRate: target.stats.growthRate,
         isLandlocked: target.stats.isLandlocked,
         warReadiness: target.stats.warReadiness
