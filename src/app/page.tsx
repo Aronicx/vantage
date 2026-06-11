@@ -234,16 +234,23 @@ export default function VantagePoint() {
 
   const handleSplit = () => {
     if (selection.length !== 1 || !world) return;
+    
+    const sum = splitDistributions.reduce((s, v) => s + v, 0);
+    if (Math.abs(sum - 100) > 0.1) {
+      toast({ 
+        variant: "destructive", 
+        title: "Allocation Error", 
+        description: "The total allocation must be exactly 100%. Please adjust the percentages." 
+      });
+      return;
+    }
+
     const allNamed = splitNames.every(n => n.trim().length > 0);
     if (!allNamed) {
       toast({ variant: "destructive", title: "Incomplete Data", description: "Please provide names for all successor states." });
       return;
     }
-    const sum = splitDistributions.reduce((s, v) => s + v, 0);
-    if (Math.abs(sum - 100) > 0.1) {
-      toast({ variant: "destructive", title: "Allocation Error", description: "The distribution sum must equal exactly 100%." });
-      return;
-    }
+
     const nextWorld = splitCountry(world, selection[0], splitParts, splitNames, splitDistributions);
     setWorld(nextWorld);
     setSelection([]);
@@ -273,6 +280,12 @@ export default function VantagePoint() {
     if (!world) return [];
     return [...world.countries].sort((a,b) => b.stats.economy - a.stats.economy);
   }, [world?.countries]);
+
+  const splitAllocationTotal = useMemo(() => {
+    return splitDistributions.reduce((sum, val) => sum + val, 0);
+  }, [splitDistributions]);
+
+  const isSplitAllocationValid = Math.abs(splitAllocationTotal - 100) < 0.1;
 
   if (!world || !world.gameStarted) {
     return (
@@ -483,13 +496,18 @@ export default function VantagePoint() {
                                 <span className="text-[7px] font-bold uppercase text-muted-foreground">Total Allocation</span>
                                 <span className={cn(
                                   "text-[10px] font-bold font-mono",
-                                  Math.abs(splitDistributions.reduce((s,v)=>s+v,0) - 100) > 0.1 ? "text-red-500" : "text-green-600"
+                                  !isSplitAllocationValid ? "text-red-500" : "text-green-600"
                                 )}>
-                                  {splitDistributions.reduce((s,v)=>s+v,0)}%
+                                  {splitAllocationTotal}%
                                 </span>
                               </div>
                             </div>
-                            <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none" disabled={loading || splitNames.some(n => !n.trim()) || Math.abs(splitDistributions.reduce((s,v)=>s+v,0) - 100) > 0.1} onClick={handleSplit}>
+                            <Button 
+                              size="sm" 
+                              className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none" 
+                              disabled={loading || splitNames.some(n => !n.trim()) || !isSplitAllocationValid} 
+                              onClick={handleSplit}
+                            >
                               EXECUTE PARTITION
                             </Button>
                           </div>
