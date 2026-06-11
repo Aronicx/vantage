@@ -513,12 +513,16 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
       if (isDefending) naval *= 2.0; 
     }
 
-    const basePower = (
+    let basePower = (
       (ground * 1.0 + air * 1.0 + naval * 0.7) * 1.0 +
       (c.stats.economy * 0.15) + (c.stats.population * 2)
     ) * (0.4 + (c.stats.warReadiness / 100) * 0.6);
 
-    return isDefending ? basePower * cityDefenseBonus : basePower;
+    // Apply strict posture multipliers
+    if (isDefending) basePower *= (1.8 * cityDefenseBonus);
+    if (isAttacking && mode === 'mutual') basePower *= 1.2; // Both mobilization
+
+    return basePower;
   };
 
   const getTargetCity = (attacker: Country, defender: Country) => {
@@ -551,22 +555,46 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
   const totalPower = p1 + p2;
   const powerScale = Math.log10(Math.max(10, totalPower)) / 2; 
 
-  const winnerPenalty = (5 + (intensity * 10)) * powerScale;
-  const loserPenalty = (25 + (intensity * 25)) * powerScale;
+  const baseWinnerPenalty = (5 + (intensity * 10)) * powerScale;
+  const baseLoserPenalty = (25 + (intensity * 25)) * powerScale;
 
-  winner.settlements = winner.settlements.map(s => ({
+  let p1Penalty = winnerId === id1 ? baseWinnerPenalty : baseLoserPenalty;
+  let p2Penalty = winnerId === id2 ? baseWinnerPenalty : baseLoserPenalty;
+
+  // Refine penalties based on posture and outcome
+  if (winnerId === id1) {
+    if (isAttacker1) p1Penalty *= 1.2; // Offensive wins are costly
+    if (isDefender1) p1Penalty *= 0.7; // Defensive wins are efficient
+    if (isAttacker2) p2Penalty *= 1.5; // Failed assault is disastrous
+  } else {
+    if (isAttacker2) p2Penalty *= 1.2;
+    if (isDefender2) p2Penalty *= 0.7;
+    if (isAttacker1) p1Penalty *= 1.5;
+  }
+
+  c1.settlements = c1.settlements.map(s => ({
     ...s,
-    stats: { ...s.stats, warReadiness: Math.max(25, s.stats.warReadiness - winnerPenalty) }
+    stats: { ...s.stats, warReadiness: Math.max(5, s.stats.warReadiness - p1Penalty) }
   }));
-  loser.settlements = loser.settlements.map(s => ({
+  c2.settlements = c2.settlements.map(s => ({
     ...s,
-    stats: { ...s.stats, warReadiness: Math.max(5, s.stats.warReadiness - loserPenalty) }
+    stats: { ...s.stats, warReadiness: Math.max(5, s.stats.warReadiness - p2Penalty) }
   }));
 
   const isNavalWar = (!winner.stats.isLandlocked || !loser.stats.isLandlocked);
   const targetCity = winnerId === id1 ? targetForC1 : targetForC2;
 
-  if (!targetCity) return { state, result: "Frontlines stable. No targets reachable." };
+  // Decide if territory actually changes hands. 
+  // Defenders winning just push back the assault; they don't capture territory.
+  const isWinnerAttacking = (winnerId === id1 && isAttacker1) || (winnerId === id2 && isAttacker2);
+
+  if (!targetCity || !isWinnerAttacking) {
+    const defenseLog = (!isWinnerAttacking && winnerId !== loserId) ? " Assault successfully repelled." : " Frontlines stable.";
+    return { 
+      state: { ...state, countries: state.countries.map(c => c.id === id1 ? updateCountryAggregates(c1) : c.id === id2 ? updateCountryAggregates(c2) : c) }, 
+      result: `Conflict concluded.${defenseLog}` 
+    };
+  }
 
   const targetIsCoastal = isCoastal(targetCity.coords, landSet, gridSize);
   let damageFactor = 0.8;
