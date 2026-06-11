@@ -185,27 +185,6 @@ export function rebuildCountryMetadata(country: Country, landPointSet: Set<strin
     const best = scoredCities[0].settlement;
     best.type = 'capital';
     currentCapital = best;
-  } else if (!currentCapital && country.points.length > 0) {
-    let closestPoint = country.points[0];
-    let minDist = Infinity;
-    for (const p of country.points) {
-      const d = getDistance(p, newCenter);
-      if (d < minDist) { minDist = d; closestPoint = p; }
-    }
-    const capIsCoastal = isCoastal(closestPoint, landPointSet, gridSize);
-    country.settlements.push({
-      id: `${country.id}-cap-auto-${Date.now()}`,
-      name: "Provisional Capital",
-      type: 'capital',
-      coords: closestPoint,
-      ownerId: country.id,
-      stats: {
-        economy: 15 * (capIsCoastal ? 1.6 : 1.0),
-        population: 0.4 * (capIsCoastal ? 1.3 : 1.0),
-        military: { ground: 15, air: 10, naval: capIsCoastal ? 15 : 0 },
-        warReadiness: 100
-      }
-    });
   }
 
   const provinceCount = Math.max(3, Math.floor(country.points.length / 100));
@@ -441,41 +420,36 @@ export function processTick(state: GameState): GameState {
   return { ...state, countries: updatedCountries, gameYear: state.gameYear + 1 };
 }
 
-export function executeBattle(state: GameState, id1: string, id2: string, mode: BattleMode = 'attacker', forcedWinnerId?: string): { state: GameState, result: string } {
-  const getPartyCountries = (id: string): Country[] => {
-    const alliance = state.alliances.find(a => a.id === id);
-    if (alliance) return state.countries.filter(c => alliance.countryIds.includes(c.id));
-    const country = state.countries.find(c => c.id === id);
-    return country ? [country] : [];
-  };
+export function executeBattle(
+  state: GameState, 
+  sideAIds: string[], 
+  sideBIds: string[], 
+  mode: BattleMode = 'attacker'
+): { state: GameState, result: string } {
+  const sideACountries = state.countries.filter(c => sideAIds.includes(c.id));
+  const sideBCountries = state.countries.filter(c => sideBIds.includes(c.id));
 
-  const p1Countries = getPartyCountries(id1);
-  const p2Countries = getPartyCountries(id2);
-
-  if (p1Countries.length === 0 || p2Countries.length === 0) return { state, result: 'Invalid participants' };
+  if (sideACountries.length === 0 || sideBCountries.length === 0) {
+    return { state, result: 'Invalid participants' };
+  }
 
   const landSet = new Set(state.landPointSet);
   const gridSize = 5;
 
   let hasLandBorder = false;
-  for (const c1 of p1Countries) {
-    for (const c2 of p2Countries) {
-      if (checkSharingLandBorder(c1, c2)) { hasLandBorder = true; break; }
+  for (const cA of sideACountries) {
+    for (const cB of sideBCountries) {
+      if (checkSharingLandBorder(cA, cB)) { hasLandBorder = true; break; }
     }
     if (hasLandBorder) break;
   }
 
-  const isAttacker1 = mode === 'attacker' || mode === 'mutual';
-  const isDefender1 = mode === 'defender' || mode === 'mutual';
-  const isAttacker2 = mode === 'defender' || mode === 'mutual';
-  const isDefender2 = mode === 'attacker' || mode === 'mutual';
+  const isAttackerA = mode === 'attacker' || mode === 'mutual';
+  const isDefenderA = mode === 'defender' || mode === 'mutual';
+  const isAttackerB = mode === 'defender' || mode === 'mutual';
+  const isDefenderB = mode === 'attacker' || mode === 'mutual';
 
-  const pointMap = new Map<string, string>();
-  state.countries.forEach(c => {
-    c.points.forEach(p => pointMap.set(`${p.x},${p.y}`, c.id));
-  });
-
-  const calculatePartyPower = (countries: Country[], isAttacking: boolean, isDefending: boolean, targetParty: Country[]) => {
+  const calculateSidePower = (countries: Country[], isAttacking: boolean, isDefending: boolean, targetSide: Country[]) => {
     let totalPower = 0;
     const avgReadiness = countries.reduce((sum, c) => sum + c.stats.warReadiness, 0) / countries.length;
 
@@ -487,7 +461,7 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
       let effectiveness = 1.0;
       if (!hasLandBorder && isAttacking) {
         let minDist = Infinity;
-        targetParty.forEach(tp => {
+        targetSide.forEach(tp => {
           const d = getDistance(c.center, tp.center);
           if (d < minDist) minDist = d;
         });
@@ -512,15 +486,15 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
     return totalPower;
   };
 
-  const p1Power = calculatePartyPower(p1Countries, isAttacker1, isDefender1, p2Countries) * (0.95 + Math.random() * 0.1);
-  const p2Power = calculatePartyPower(p2Countries, isAttacker2, isDefender2, p1Countries) * (0.95 + Math.random() * 0.1);
+  const powerA = calculateSidePower(sideACountries, isAttackerA, isDefenderA, sideBCountries) * (0.95 + Math.random() * 0.1);
+  const powerB = calculateSidePower(sideBCountries, isAttackerB, isDefenderB, sideACountries) * (0.95 + Math.random() * 0.1);
 
-  const winnerPartyId = forcedWinnerId ? (getPartyCountries(forcedWinnerId).some(c => p1Countries.map(x=>x.id).includes(c.id)) ? id1 : id2) : (p1Power > p2Power ? id1 : id2);
-  const winnerCountries = winnerPartyId === id1 ? p1Countries : p2Countries;
-  const loserCountries = winnerPartyId === id1 ? p2Countries : p1Countries;
+  const winnerIsA = powerA > powerB;
+  const winnerCountries = winnerIsA ? sideACountries : sideBCountries;
+  const loserCountries = winnerIsA ? sideBCountries : sideACountries;
 
-  const intensity = Math.min(p1Power, p2Power) / Math.max(p1Power, p2Power);
-  const powerScale = Math.log10(Math.max(10, p1Power + p2Power)) / 2;
+  const intensity = Math.min(powerA, powerB) / Math.max(powerA, powerB);
+  const powerScale = Math.log10(Math.max(10, powerA + powerB)) / 2;
   const baseWinPenalty = (5 + intensity * 10) * powerScale;
   const baseLosePenalty = (20 + intensity * 25) * powerScale;
 
@@ -534,10 +508,10 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
     });
   };
 
-  applyPenalties(p1Countries, winnerPartyId === id1 ? baseWinPenalty : baseLosePenalty);
-  applyPenalties(p2Countries, winnerPartyId === id2 ? baseWinPenalty : baseLosePenalty);
+  applyPenalties(sideACountries, winnerIsA ? baseWinPenalty : baseLosePenalty);
+  applyPenalties(sideBCountries, winnerIsA ? baseLosePenalty : baseWinPenalty);
 
-  const isWinnerAttacking = (winnerPartyId === id1 && isAttacker1) || (winnerPartyId === id2 && isAttacker2);
+  const isWinnerAttacking = (winnerIsA && isAttackerA) || (!winnerIsA && isAttackerB);
   
   const loserTargetCountry = loserCountries[Math.floor(Math.random() * loserCountries.length)];
   const targetCity = loserTargetCountry.settlements.sort((a,b) => {
@@ -548,16 +522,20 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
     return getDistance(a.coords, winAvgCenter) - getDistance(b.coords, winAvgCenter);
   })[0];
 
-  if (!targetCity || !isWinnerAttacking) {
+  // Defensive Check: Capitals are protected unless readiness is low
+  const isTargetCapital = targetCity?.type === 'capital';
+  const canCaptureCapital = loserTargetCountry.stats.warReadiness < 35 || loserTargetCountry.settlements.length === 1;
+
+  if (!targetCity || !isWinnerAttacking || (isTargetCapital && !canCaptureCapital)) {
     return { 
       state: { ...state, countries: state.countries.map(c => {
-        const p1Match = p1Countries.find(x => x.id === c.id);
-        if (p1Match) return p1Match;
-        const p2Match = p2Countries.find(x => x.id === c.id);
-        if (p2Match) return p2Match;
+        const sideAMatch = sideACountries.find(x => x.id === c.id);
+        if (sideAMatch) return sideAMatch;
+        const sideBMatch = sideBCountries.find(x => x.id === c.id);
+        if (sideBMatch) return sideBMatch;
         return c;
       })},
-      result: isWinnerAttacking ? "Strategic stalemate: Attack repelled." : "Frontlines stabilized."
+      result: isWinnerAttacking ? "Strategic stalemate: Offensive repelled by entrenched forces." : "Frontlines stabilized."
     };
   }
 
@@ -574,8 +552,7 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
     warReadiness: 25
   };
 
-  const capturedCapital = targetCity.type === 'capital';
-  if (capturedCapital) {
+  if (isTargetCapital) {
     targetCity.type = 'city';
     loserTargetCountry.recoveryEndYear = state.gameYear + 25;
   }
@@ -607,10 +584,10 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
   let nextCountries = state.countries.map(c => {
     if (c.id === bestWinner.id) return bestWinner;
     if (c.id === loserTargetCountry.id) return loserTargetCountry;
-    const p1Match = p1Countries.find(x => x.id === c.id);
-    if (p1Match) return p1Match;
-    const p2Match = p2Countries.find(x => x.id === c.id);
-    if (p2Match) return p2Match;
+    const sideAMatch = sideACountries.find(x => x.id === c.id);
+    if (sideAMatch) return sideAMatch;
+    const sideBMatch = sideBCountries.find(x => x.id === c.id);
+    if (sideBMatch) return sideBMatch;
     return c;
   });
 
@@ -618,12 +595,12 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
     nextCountries = nextCountries.filter(c => c.id !== loserTargetCountry.id);
   }
 
-  const resultPrefix = winnerPartyId === id1 ? (isAttacker1 ? "Successful offensive" : "Counter-attack victory") : (isAttacker2 ? "Successful offensive" : "Counter-attack victory");
-  const allianceAlert = (winnerCountries.length > 1 || loserCountries.length > 1) ? " (Asymmetric Engagement)" : "";
+  const resultPrefix = winnerIsA ? (isAttackerA ? "Successful Side A offensive" : "Side A defensive victory") : (isAttackerB ? "Successful Side B offensive" : "Side B defensive victory");
+  const capturedText = isTargetCapital ? `Seized capital ${targetCity.name}!` : `Captured ${targetCity.name}.`;
 
   return {
     state: { ...state, countries: nextCountries },
-    result: `${resultPrefix}: ${capturedCapital ? `Seized capital ${targetCity.name}!` : `Captured ${targetCity.name}.`}${allianceAlert}`
+    result: `${resultPrefix}: ${capturedText}`
   };
 }
 
@@ -861,7 +838,7 @@ export function executeAllianceWar(state: GameState): GameState {
   losers.forEach(all => {
     all.countryIds.forEach(cid => {
       const receiver = winner.countryIds[Math.floor(Math.random() * winner.countryIds.length)];
-      const res = executeBattle({ ...state, countries: currentCountries }, receiver, cid, 'attacker', receiver);
+      const res = executeBattle({ ...state, countries: currentCountries }, [receiver], [cid], 'attacker');
       currentCountries = res.state.countries;
     });
   });

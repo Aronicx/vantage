@@ -52,7 +52,8 @@ import {
   Hammer,
   ArrowRight,
   Map as MapIcon,
-  Flag
+  Flag,
+  Handshake
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -66,7 +67,7 @@ import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-type InteractionMode = 'none' | 'battle-menu' | 'battle-select' | 'war-menu' | 'war-select' | 'stats-panel' | 'merge-menu' | 'merge-select' | 'split-menu' | 'split-select';
+type InteractionMode = 'none' | 'war-menu' | 'alliance-menu' | 'merge-menu' | 'split-menu';
 
 export default function VantagePoint() {
   const { toast } = useToast();
@@ -75,8 +76,18 @@ export default function VantagePoint() {
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<InteractionMode>('none');
   const [battleMode, setBattleMode] = useState<BattleMode>('attacker');
+  
+  // War Selection
+  const [warSideA, setWarSideA] = useState<string[]>([]);
+  const [warSideB, setWarSideB] = useState<string[]>([]);
+  const [activeWarSide, setActiveWarSide] = useState<'A' | 'B'>('A');
+
+  // Alliance Selection
+  const [allianceSelection, setAllianceSelection] = useState<string[]>([]);
+
+  // Other Selections
   const [selection, setSelection] = useState<string[]>([]);
-  const [battleParties, setBattleParties] = useState<('country' | 'alliance')[]>(['country', 'country']);
+  
   const [mergeName, setMergeName] = useState('');
   const [isNewUnion, setIsNewUnion] = useState(false);
   const [splitParts, setSplitParts] = useState(2);
@@ -126,45 +137,56 @@ export default function VantagePoint() {
     if (world) setWorld({ ...world, gameStarted: true, isPaused: false });
   };
 
-  const handleCountryClick = (c: Country) => {
-    if (mode === 'battle-select' || mode === 'battle-menu') {
-      const slotIndex = selection.length < 2 ? selection.length : 1;
-      const type = battleParties[slotIndex];
-      
-      let targetId = c.id;
-      if (type === 'alliance') {
-        if (!c.allianceId) {
-          toast({ variant: "destructive", title: "Selection Error", description: "Country is not part of an alliance." });
-          return;
-        }
-        targetId = c.allianceId;
-      }
+  const getAllianceMembers = (countryId: string) => {
+    if (!world) return [];
+    const country = world.countries.find(c => c.id === countryId);
+    if (!country?.allianceId) return [countryId];
+    const alliance = world.alliances.find(a => a.id === country?.allianceId);
+    return alliance?.countryIds || [countryId];
+  };
 
-      if (selection.includes(targetId)) {
-        setSelection(selection.filter(id => id !== targetId));
-      } else if (selection.length < 2) {
-        setSelection([...selection, targetId]);
+  const handleCountryClick = (c: Country) => {
+    if (mode === 'war-menu') {
+      const members = getAllianceMembers(c.id);
+      if (activeWarSide === 'A') {
+        // Toggle Side A
+        if (warSideA.includes(c.id)) {
+          setWarSideA(warSideA.filter(id => !members.includes(id)));
+        } else {
+          // Remove from B if exists, then add to A
+          setWarSideB(warSideB.filter(id => !members.includes(id)));
+          setWarSideA(Array.from(new Set([...warSideA, ...members])));
+        }
+      } else {
+        // Toggle Side B
+        if (warSideB.includes(c.id)) {
+          setWarSideB(warSideB.filter(id => !members.includes(id)));
+        } else {
+          // Remove from A if exists, then add to B
+          setWarSideA(warSideA.filter(id => !members.includes(id)));
+          setWarSideB(Array.from(new Set([...warSideB, ...members])));
+        }
       }
     } 
-    else if (mode === 'war-select' || mode === 'war-menu') {
-      if (selection.includes(c.id)) {
-        setSelection(selection.filter(id => id !== c.id));
+    else if (mode === 'alliance-menu') {
+      if (allianceSelection.includes(c.id)) {
+        setAllianceSelection(allianceSelection.filter(id => id !== c.id));
       } else {
         if (c.allianceId) {
           toast({ variant: "destructive", title: "Access Denied", description: "Country is already member of another alliance." });
           return;
         }
-        setSelection([...selection, c.id]);
+        setAllianceSelection([...allianceSelection, c.id]);
       }
     }
-    else if (mode === 'merge-select' || mode === 'merge-menu') {
+    else if (mode === 'merge-menu') {
       if (selection.includes(c.id)) {
         setSelection(selection.filter(id => id !== c.id));
       } else {
         setSelection([...selection, c.id]);
       }
     } 
-    else if (mode === 'split-select' || mode === 'split-menu') {
+    else if (mode === 'split-menu') {
       if (selection.includes(c.id)) {
         setSelection([]);
       } else {
@@ -177,22 +199,22 @@ export default function VantagePoint() {
     }
   };
 
-  const startBattle = () => {
-    if (selection.length !== 2 || !world) return;
-    const { state, result } = executeBattle(world, selection[0], selection[1], battleMode);
+  const startWar = () => {
+    if (warSideA.length === 0 || warSideB.length === 0 || !world) return;
+    const { state, result } = executeBattle(world, warSideA, warSideB, battleMode);
     setWorld(state);
-    toast({ title: "Operation Concluded", description: result });
-    setSelection([]);
+    toast({ title: "War Concluded", description: result });
+    setWarSideA([]);
+    setWarSideB([]);
     setMode('none');
   };
 
   const confirmAlliance = () => {
-    if (selection.length === 0 || !world) return;
-    const nextWorld = createAlliance(world, selection);
+    if (allianceSelection.length < 2 || !world) return;
+    const nextWorld = createAlliance(world, allianceSelection);
     setWorld(nextWorld);
-    setSelection([]);
-    toast({ title: "New Coalition", description: `Bloc established with ${selection.length} members.` });
-    setMode('war-menu');
+    setAllianceSelection([]);
+    toast({ title: "New Coalition", description: `Bloc established with ${allianceSelection.length} members.` });
   };
 
   const handleDisbandAlliance = (id: string) => {
@@ -200,21 +222,6 @@ export default function VantagePoint() {
     const nextWorld = disbandAlliance(world, id);
     setWorld(nextWorld);
     toast({ title: "Alliance Dissolved", description: "All member countries are now independent." });
-  };
-
-  const handleLeaveAlliance = (id: string) => {
-    if (!world) return;
-    const nextWorld = leaveAlliance(world, id);
-    setWorld(nextWorld);
-    toast({ title: "Secession Complete", description: "Country has officially left its alliance." });
-  };
-
-  const executeWar = () => {
-    if (!world || world.alliances.length < 2) return;
-    const nextWorld = executeAllianceWar(world);
-    setWorld(nextWorld); 
-    setMode('none');
-    toast({ title: "Global Conflict Resolved", description: "Alliances have dissolved and territories have been redistributed." });
   };
 
   const handleMerge = (dominantId?: string) => {
@@ -239,7 +246,7 @@ export default function VantagePoint() {
     setSplitNames([]);
     setSplitDistributions([]);
     setMode('none');
-    toast({ title: "Nation Partitioned", description: `The territory and stats have been divided according to your specifications.` });
+    toast({ title: "Nation Partitioned", description: `Territory divided into ${splitParts} connected regions.` });
   };
 
   const handleSaveRename = () => {
@@ -255,7 +262,7 @@ export default function VantagePoint() {
     if (!world) return;
     const nextWorld = updateCountryColor(world, id, color);
     setWorld(nextWorld);
-    toast({ title: "Map Refined", description: "National administrative color has been updated." });
+    toast({ title: "Map Refined", description: "Color updated." });
   };
 
   const sortedCountries = useMemo(() => {
@@ -276,15 +283,15 @@ export default function VantagePoint() {
       <Card className="rounded-none border-black/10 bg-black/[0.01] shadow-none">
         <CardHeader className="p-3 border-b border-black/5">
           <CardTitle className="text-[9px] uppercase font-bold flex items-center justify-between">
-            {mode.split('-')[0]} Configuration
+            {mode === 'war-menu' ? 'WAR PROTOCOL' : mode === 'alliance-menu' ? 'ALLIANCE MANAGEMENT' : mode.split('-')[0].toUpperCase() + ' CONFIGURATION'}
             <Button variant="ghost" size="icon" className="h-4 w-4" onClick={() => setMode('none')}><X className="h-2 w-2" /></Button>
           </CardTitle>
         </CardHeader>
         <CardContent className="p-3 space-y-4">
-          {mode.startsWith('battle') && (
+          {mode === 'war-menu' && (
             <div className="space-y-4">
                <div className="space-y-1.5">
-                 <label className="text-[7px] font-bold uppercase text-muted-foreground">War Mode</label>
+                 <label className="text-[7px] font-bold uppercase text-muted-foreground">Strategic Posture</label>
                  <Tabs value={battleMode} onValueChange={(val) => setBattleMode(val as BattleMode)}>
                    <TabsList className="grid grid-cols-3 h-8 p-1 rounded-none bg-black/5">
                      <TabsTrigger value="attacker" className="text-[8px] uppercase font-bold rounded-none">Attack</TabsTrigger>
@@ -295,64 +302,89 @@ export default function VantagePoint() {
                </div>
                
                <div className="space-y-3">
-                 <p className="text-[7px] font-bold uppercase text-muted-foreground">Participants</p>
-                 <div className="space-y-3">
-                   {[0, 1].map(idx => (
-                     <div key={idx} className="space-y-1.5 p-2 bg-white border border-black/5">
-                       <div className="flex items-center justify-between mb-1">
-                         <span className="text-[8px] font-bold uppercase">Party {idx + 1}</span>
-                         <div className="flex gap-1">
-                            <Button 
-                              variant="ghost" 
-                              className={cn("h-4 px-1 text-[6px] rounded-none border", battleParties[idx] === 'country' ? "bg-black text-white" : "bg-white")}
-                              onClick={() => {
-                                const next = [...battleParties];
-                                next[idx] = 'country';
-                                setBattleParties(next);
-                                setSelection([]); // Reset selection when type changes
-                              }}
-                            >Independent</Button>
-                            <Button 
-                              variant="ghost" 
-                              className={cn("h-4 px-1 text-[6px] rounded-none border", battleParties[idx] === 'alliance' ? "bg-black text-white" : "bg-white")}
-                              onClick={() => {
-                                const next = [...battleParties];
-                                next[idx] = 'alliance';
-                                setBattleParties(next);
-                                setSelection([]);
-                              }}
-                            >Alliance</Button>
-                         </div>
-                       </div>
-                       <div className="min-h-[20px] flex items-center justify-center border-t border-black/[0.03] pt-1">
-                         {selection[idx] ? (
-                           <div className="text-[8px] font-bold uppercase truncate w-full flex items-center gap-2">
-                             {battleParties[idx] === 'country' ? <Globe className="h-2 w-2" /> : <Shield className="h-2 w-2" />}
-                             {battleParties[idx] === 'country' 
-                               ? world.countries.find(c => c.id === selection[idx])?.name 
-                               : world.alliances.find(a => a.id === selection[idx])?.name
-                             }
-                           </div>
-                         ) : (
-                           <span className="text-[7px] text-muted-foreground italic">Select on map</span>
-                         )}
-                       </div>
-                     </div>
-                   ))}
+                 <p className="text-[7px] font-bold uppercase text-muted-foreground">Opposition Teams</p>
+                 <Tabs value={activeWarSide} onValueChange={(val) => setActiveWarSide(val as 'A' | 'B')}>
+                   <TabsList className="grid grid-cols-2 h-8 p-1 rounded-none bg-black/5">
+                     <TabsTrigger value="A" className={cn("text-[8px] uppercase font-bold rounded-none", warSideA.length > 0 && "text-blue-600")}>SIDE A ({warSideA.length})</TabsTrigger>
+                     <TabsTrigger value="B" className={cn("text-[8px] uppercase font-bold rounded-none", warSideB.length > 0 && "text-red-600")}>SIDE B ({warSideB.length})</TabsTrigger>
+                   </TabsList>
+                 </Tabs>
+
+                 <div className="space-y-2 max-h-40 overflow-y-auto">
+                    <p className="text-[6px] uppercase font-bold text-muted-foreground text-center">Tap countries to add them and their allies</p>
+                    <div className="flex flex-col gap-1">
+                      {warSideA.length > 0 && (
+                        <div className="p-2 bg-blue-50 border border-blue-100 space-y-1">
+                          <p className="text-[7px] font-bold uppercase text-blue-700">Side A Forces</p>
+                          <div className="flex flex-wrap gap-1">
+                            {warSideA.map(id => <Badge key={id} variant="outline" className="text-[6px] py-0 px-1 rounded-none bg-white">{world.countries.find(x => x.id === id)?.name}</Badge>)}
+                          </div>
+                        </div>
+                      )}
+                      {warSideB.length > 0 && (
+                        <div className="p-2 bg-red-50 border border-red-100 space-y-1">
+                          <p className="text-[7px] font-bold uppercase text-red-700">Side B Forces</p>
+                          <div className="flex flex-wrap gap-1">
+                            {warSideB.map(id => <Badge key={id} variant="outline" className="text-[6px] py-0 px-1 rounded-none bg-white">{world.countries.find(x => x.id === id)?.name}</Badge>)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                  </div>
                </div>
 
-               <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none" disabled={selection.length !== 2} onClick={startBattle}>
-                 EXECUTE PROTOCOL
+               <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none" disabled={warSideA.length === 0 || warSideB.length === 0} onClick={startWar}>
+                 COMMENCE HOSTILITIES
                </Button>
             </div>
           )}
 
-          {mode.startsWith('merge') && (
+          {mode === 'alliance-menu' && (
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <p className="text-[7px] uppercase font-bold text-muted-foreground">Existing Blocs</p>
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {world.alliances.map(a => (
+                    <div key={a.id} className="flex flex-col bg-white border border-black/10">
+                      <div className="flex items-center justify-between p-1.5 border-b border-black/5 bg-black/[0.02]">
+                        <div className="flex items-center gap-2 overflow-hidden">
+                          <div className="w-2 h-2 shrink-0" style={{ backgroundColor: a.color }} />
+                          <span className="text-[8px] font-bold uppercase truncate">{a.name}</span>
+                        </div>
+                        <Button variant="ghost" size="icon" className="h-4 w-4 text-red-600" onClick={() => handleDisbandAlliance(a.id)}><X className="h-2.5 w-2.5" /></Button>
+                      </div>
+                      <div className="p-1 flex flex-wrap gap-1">
+                        {a.countryIds.map(cid => (
+                          <Badge key={cid} variant="outline" className="text-[6px] px-1 py-0 rounded-none border-black/10">{world.countries.find(c => c.id === cid)?.name}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {world.alliances.length === 0 && <p className="text-[8px] italic text-muted-foreground text-center py-4">No active alliances found.</p>}
+                </div>
+              </div>
+              
+              <div className="pt-2 border-t border-black/5 space-y-2">
+                <p className="text-[7px] font-bold uppercase text-muted-foreground">Form New Alliance</p>
+                <div className="bg-white border border-black/10 p-2 min-h-[40px] flex flex-wrap gap-1">
+                  {allianceSelection.map(id => (
+                    <Badge key={id} variant="default" className="text-[7px] px-1.5 py-0.5 rounded-none bg-black text-white">
+                      {world.countries.find(c => c.id === id)?.name}
+                      <X className="h-2 w-2 ml-1 cursor-pointer" onClick={() => setAllianceSelection(prev => prev.filter(x => x !== id))} />
+                    </Badge>
+                  ))}
+                  {allianceSelection.length === 0 && <span className="text-[7px] text-muted-foreground italic uppercase">Tap countries on map</span>}
+                </div>
+                <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none" disabled={allianceSelection.length < 2} onClick={confirmAlliance}>ESTABLISH BLOC</Button>
+              </div>
+            </div>
+          )}
+
+          {mode === 'merge-menu' && (
             <div className="space-y-3">
                <div className="space-y-2">
                  <div className="flex items-center justify-between">
-                  <p className="text-[7px] font-bold uppercase text-muted-foreground">Selected Participants</p>
+                  <p className="text-[7px] font-bold uppercase text-muted-foreground">Union Participants</p>
                   <span className="text-[7px] font-bold bg-black/5 px-1">{selection.length}</span>
                  </div>
                  <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
@@ -367,7 +399,7 @@ export default function VantagePoint() {
                          </div>
                          {selection.length === 2 && !isNewUnion && (
                            <Button size="sm" variant="outline" className="h-5 px-1.5 text-[6px] uppercase font-bold rounded-none hover:bg-black hover:text-white" onClick={() => handleMerge(id)}>
-                             Absorb Others
+                             Absorb into this
                            </Button>
                          )}
                        </div>
@@ -380,22 +412,22 @@ export default function VantagePoint() {
                  <div className="space-y-3 pt-2 border-t border-black/5">
                    {selection.length === 2 ? (
                      <div className="flex items-center justify-between">
-                       <label className="text-[7px] font-bold uppercase text-muted-foreground">Union Strategy</label>
+                       <label className="text-[7px] font-bold uppercase text-muted-foreground">Protocol</label>
                        <Button variant="ghost" className={cn("h-5 px-1.5 text-[7px] uppercase font-bold rounded-none border", isNewUnion ? "bg-black text-white" : "bg-white")} onClick={() => setIsNewUnion(!isNewUnion)}>
-                         {isNewUnion ? "New Sovereign" : "Change to New Union"}
+                         {isNewUnion ? "NEW NATION" : "SWITCH TO NEW NATION"}
                        </Button>
                      </div>
                    ) : (
                      <div className="flex items-center gap-2 text-blue-600 bg-blue-50 p-2 border border-blue-100">
                        <Info className="h-3 w-3 shrink-0" />
-                       <p className="text-[7px] font-bold uppercase leading-tight">Multilateral mergers always create a new sovereign identity.</p>
+                       <p className="text-[7px] font-bold uppercase leading-tight">Multilateral mergers automatically create a new nation.</p>
                      </div>
                    )}
                    {(isNewUnion || selection.length > 2) && (
                      <div className="space-y-1.5">
-                       <label className="text-[7px] font-bold uppercase text-muted-foreground">Union Identity</label>
-                       <Input placeholder="e.g. Greater Republic" className="h-8 text-[10px] rounded-none border-black/20 focus-visible:ring-black px-2 bg-white" value={mergeName} onChange={(e) => setMergeName(e.target.value)} />
-                       <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none mt-2" disabled={!mergeName.trim()} onClick={() => handleMerge()}>ESTABLISH UNION</Button>
+                       <label className="text-[7px] font-bold uppercase text-muted-foreground">Union Name</label>
+                       <Input placeholder="e.g. United Federation" className="h-8 text-[10px] rounded-none border-black/20 focus-visible:ring-black px-2 bg-white" value={mergeName} onChange={(e) => setMergeName(e.target.value)} />
+                       <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none mt-2" disabled={!mergeName.trim()} onClick={() => handleMerge()}>PROCLAIM UNION</Button>
                      </div>
                    )}
                  </div>
@@ -403,7 +435,7 @@ export default function VantagePoint() {
             </div>
           )}
 
-          {mode.startsWith('split') && (
+          {mode === 'split-menu' && (
             <div className="space-y-3">
               {selection.length === 1 ? (
                 <div className="space-y-4">
@@ -412,23 +444,22 @@ export default function VantagePoint() {
                   </div>
                   <div className="space-y-1.5">
                     <div className="flex justify-between items-center text-[8px] font-bold uppercase text-muted-foreground">
-                      <span>Successors</span>
+                      <span>Splinters</span>
                       <span className="text-black text-[10px]">{splitParts}</span>
                     </div>
                     <Slider value={[splitParts]} onValueChange={(val) => setSplitParts(val[0])} min={2} max={5} step={1} className="py-1" />
                   </div>
                   <div className="space-y-3">
-                    <p className="text-[7px] font-bold uppercase text-muted-foreground border-b border-black/5 pb-1">Successor Configuration</p>
+                    <p className="text-[7px] font-bold uppercase text-muted-foreground border-b border-black/5 pb-1">Allocation Details</p>
                     {Array.from({ length: splitParts }).map((_, i) => (
                       <div key={i} className="space-y-1.5 p-2 bg-black/[0.02] border border-black/[0.05]">
                         <div className="flex gap-2">
-                          <Input placeholder={`Name ${i + 1}`} className="h-7 text-[9px] rounded-none border-black/15 bg-white px-2 flex-1" value={splitNames[i] || ""} onChange={(e) => {
+                          <Input placeholder={`Splinter ${i + 1} Name`} className="h-7 text-[9px] rounded-none border-black/15 bg-white px-2 flex-1" value={splitNames[i] || ""} onChange={(e) => {
                             const next = [...splitNames];
                             next[i] = e.target.value;
                             setSplitNames(next);
                           }} />
                           <div className="w-16 flex items-center gap-1 bg-white border border-black/15 px-1.5">
-                            <Hash className="h-2 w-2 text-muted-foreground" />
                             <Input type="number" className="h-6 text-[9px] p-0 border-0 focus-visible:ring-0 text-right font-mono" value={splitDistributions[i] || 0} onChange={(e) => {
                                 const val = parseInt(e.target.value) || 0;
                                 const next = [...splitDistributions];
@@ -441,56 +472,14 @@ export default function VantagePoint() {
                       </div>
                     ))}
                     <div className="flex justify-between items-center px-1">
-                      <span className="text-[7px] font-bold uppercase text-muted-foreground">Total Allocation</span>
+                      <span className="text-[7px] font-bold uppercase text-muted-foreground">Total (must be 100%)</span>
                       <span className={cn("text-[10px] font-bold font-mono", !isSplitAllocationValid ? "text-red-500" : "text-green-600")}>{splitAllocationTotal}%</span>
                     </div>
                   </div>
-                  <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none" disabled={loading || splitNames.some(n => !n.trim()) || !isSplitAllocationValid} onClick={handleSplit}>EXECUTE PARTITION</Button>
+                  <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none" disabled={loading || splitNames.some(n => !n.trim()) || !isSplitAllocationValid} onClick={handleSplit}>DIVIDE NATION</Button>
                 </div>
               ) : (
-                <p className="text-[8px] text-muted-foreground uppercase italic text-center py-2">Select 1 nation on map</p>
-              )}
-            </div>
-          )}
-
-          {mode.startsWith('war') && (
-            <div className="space-y-3">
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                <p className="text-[7px] uppercase font-bold text-muted-foreground">Active Coalitions</p>
-                {world.alliances.map(a => (
-                  <div key={a.id} className="flex flex-col bg-white border border-black/10">
-                    <div className="flex items-center justify-between p-1.5 border-b border-black/5 bg-black/[0.02]">
-                      <div className="flex items-center gap-2 overflow-hidden">
-                        <div className="w-2 h-2 shrink-0" style={{ backgroundColor: a.color }} />
-                        <span className="text-[8px] font-bold uppercase truncate">{a.name}</span>
-                      </div>
-                      <Button variant="ghost" size="icon" className="h-4 w-4 text-red-600" onClick={() => handleDisbandAlliance(a.id)}><X className="h-2.5 w-2.5" /></Button>
-                    </div>
-                    <div className="p-1 flex flex-wrap gap-1">
-                      {a.countryIds.map(cid => (
-                        <Badge key={cid} variant="outline" className="text-[6px] px-1 py-0 rounded-none border-black/10">{world.countries.find(c => c.id === cid)?.name}</Badge>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-                {world.alliances.length === 0 && <p className="text-[8px] italic text-muted-foreground text-center">No active alliances</p>}
-              </div>
-              <div className="grid grid-cols-1 gap-1.5 pt-2 border-t border-black/5">
-                <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none" onClick={() => { setMode('war-select'); setSelection([]); }}>FORM NEW ALLIANCE</Button>
-                {world.alliances.length >= 2 && (
-                  <Button size="sm" variant="destructive" className="w-full text-[9px] uppercase font-bold rounded-none" onClick={executeWar}>GLOBAL CONFLICT</Button>
-                )}
-              </div>
-              {(mode === 'war-select') && (
-                <div className="pt-2 border-t border-black/5 space-y-2">
-                  <p className="text-[8px] font-bold uppercase text-center">Tap sovereign nations on map</p>
-                  <div className="flex flex-wrap gap-1">
-                    {selection.map(id => (
-                      <Badge key={id} variant="default" className="text-[7px] px-1.5 py-0.5 rounded-none bg-black text-white">{world.countries.find(c => c.id === id)?.name}</Badge>
-                    ))}
-                  </div>
-                  <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none" disabled={selection.length < 2} onClick={confirmAlliance}>CONFIRM BLOC</Button>
-                </div>
+                <p className="text-[8px] text-muted-foreground uppercase italic text-center py-2">Select a single nation on map</p>
               )}
             </div>
           )}
@@ -513,6 +502,8 @@ export default function VantagePoint() {
       </div>
     );
   }
+
+  const tacticalMapSelection = mode === 'war-menu' ? [...warSideA, ...warSideB] : mode === 'alliance-menu' ? allianceSelection : selection;
 
   return (
     <div className="h-screen w-screen flex flex-col font-body bg-[#F8FAFC] overflow-hidden">
@@ -547,22 +538,23 @@ export default function VantagePoint() {
         {!isMobile && (
           <aside className={cn("border-r border-black/10 bg-white z-40 transition-all duration-300 flex flex-col shrink-0", leftSidebarOpen ? "w-[280px]" : "w-0 overflow-hidden")}>
             <div className="p-4 border-b border-black/5 flex items-center justify-between">
-              <span className="text-[10px] uppercase font-bold tracking-widest">Control Console</span>
+              <span className="text-[10px] uppercase font-bold tracking-widest">Global Operations</span>
               <Button variant="ghost" size="icon" className="h-6 w-6 rounded-none" onClick={() => setLeftSidebarOpen(false)}><ChevronLeft className="h-4 w-4" /></Button>
             </div>
             <ScrollArea className="flex-1">
               <div className="p-2 space-y-2">
-                <Button variant={mode.startsWith('battle') ? "default" : "outline"} className={cn("w-full justify-start gap-3 h-11 text-[10px] uppercase font-bold rounded-none px-4", mode.startsWith('battle') && "bg-black text-white")} onClick={() => { setMode('battle-menu'); setSelection([]); }}>
-                  <Swords className="h-4 w-4" /> Local Conflict
+                <Button variant={mode === 'war-menu' ? "default" : "outline"} className={cn("w-full justify-start gap-3 h-11 text-[10px] uppercase font-bold rounded-none px-4", mode === 'war-menu' && "bg-black text-white")} onClick={() => { setMode('war-menu'); setWarSideA([]); setWarSideB([]); }}>
+                  <Swords className="h-4 w-4" /> Start War
                 </Button>
-                <Button variant={mode.startsWith('war') ? "default" : "outline"} className={cn("w-full justify-start gap-3 h-11 text-[10px] uppercase font-bold rounded-none px-4", mode.startsWith('war') && "bg-black text-white")} onClick={() => { setMode('war-menu'); setSelection([]); }}>
-                  <Shield className="h-4 w-4" /> Diplomatic War
+                <Button variant={mode === 'alliance-menu' ? "default" : "outline"} className={cn("w-full justify-start gap-3 h-11 text-[10px] uppercase font-bold rounded-none px-4", mode === 'alliance-menu' && "bg-black text-white")} onClick={() => { setMode('alliance-menu'); setAllianceSelection([]); }}>
+                  <Shield className="h-4 w-4" /> Diplomatic Alliance
                 </Button>
-                <Button variant={mode.startsWith('merge') ? "default" : "outline"} className={cn("w-full justify-start gap-3 h-11 text-[10px] uppercase font-bold rounded-none px-4", mode.startsWith('merge') && "bg-black text-white")} onClick={() => { setMode('merge-menu'); setSelection([]); setMergeName(''); setIsNewUnion(false); }}>
+                <div className="h-px bg-black/5 my-2" />
+                <Button variant={mode === 'merge-menu' ? "default" : "outline"} className={cn("w-full justify-start gap-3 h-11 text-[10px] uppercase font-bold rounded-none px-4", mode === 'merge-menu' && "bg-black text-white")} onClick={() => { setMode('merge-menu'); setSelection([]); setMergeName(''); setIsNewUnion(false); }}>
                   <Combine className="h-4 w-4" /> Territorial Union
                 </Button>
-                <Button variant={mode.startsWith('split') ? "default" : "outline"} className={cn("w-full justify-start gap-3 h-11 text-[10px] uppercase font-bold rounded-none px-4", mode.startsWith('split') && "bg-black text-white")} onClick={() => { setMode('split-menu'); setSelection([]); setSplitParts(2); }}>
-                  <Scissors className="h-4 w-4" /> Advanced Split
+                <Button variant={mode === 'split-menu' ? "default" : "outline"} className={cn("w-full justify-start gap-3 h-11 text-[10px] uppercase font-bold rounded-none px-4", mode === 'split-menu' && "bg-black text-white")} onClick={() => { setMode('split-menu'); setSelection([]); setSplitParts(2); }}>
+                  <Scissors className="h-4 w-4" /> Advance Partition
                 </Button>
               </div>
               <div className="px-2 pb-4">{renderModeSettings()}</div>
@@ -581,14 +573,14 @@ export default function VantagePoint() {
         )}
 
         <main className={cn("flex-1 bg-[#E5F1F5] relative overflow-hidden flex items-center justify-center transition-all", isMobile && "pb-16")}>
-           <TacticalMap countries={world.countries} alliances={world.alliances} selection={selection} onSelectCountry={handleCountryClick} />
+           <TacticalMap countries={world.countries} alliances={world.alliances} selection={tacticalMapSelection} onSelectCountry={handleCountryClick} />
         </main>
 
         <aside className={cn("border-l border-black/10 bg-white z-[60] transition-all duration-300 flex flex-col shrink-0 shadow-2xl md:shadow-none", rightSidebarOpen ? (isMobile ? "fixed inset-0 w-full" : "w-[360px]") : "w-0 overflow-hidden")}>
           <div className="p-4 border-b border-black/5 flex items-center justify-between bg-white/50 backdrop-blur-md sticky top-0 z-10">
             <div className="space-y-0.5">
               <h2 className="text-lg font-headline font-bold uppercase tracking-widest">Global Atlas</h2>
-              <p className="text-[7px] text-muted-foreground uppercase font-bold tracking-tight">Ranked by Territorial Size</p>
+              <p className="text-[7px] text-muted-foreground uppercase font-bold tracking-tight">Geopolitical Rankings</p>
             </div>
             <Button size="icon" variant="ghost" onClick={() => { setRightSidebarOpen(false); setEditingId(null); }} className="rounded-none h-8 w-8"><X className="h-4 w-4" /></Button>
           </div>
@@ -653,7 +645,7 @@ export default function VantagePoint() {
                         )}
                       </div>
                       <div className="flex flex-col items-end shrink-0">
-                        <span className="text-[6px] uppercase font-bold text-muted-foreground">War Readiness</span>
+                        <span className="text-[6px] uppercase font-bold text-muted-foreground">Readiness</span>
                         <span className={cn("text-[10px] font-bold font-mono", isExhausted ? "text-red-600" : isRecovering ? "text-orange-600" : "text-green-600")}>{Math.round(c.stats.warReadiness)}%</span>
                       </div>
                     </div>
@@ -675,11 +667,6 @@ export default function VantagePoint() {
                         <p className={cn("text-[10px] font-bold font-mono tracking-tighter", isRecovering ? "text-orange-600" : "text-green-600")}>+{displayGrowth.toFixed(1)}%</p>
                       </div>
                     </div>
-                    <div className="flex gap-4 pt-1 px-1 border-t border-black/[0.02]">
-                      <div className="flex-1 space-y-0.5"><span className="text-[6px] text-muted-foreground uppercase font-bold block tracking-tighter">Ground Forces</span><span className="text-[10px] font-bold font-mono">{c.stats.military.ground.toFixed(0)}</span></div>
-                      <div className="flex-1 space-y-0.5"><span className="text-[6px] text-muted-foreground uppercase font-bold block tracking-tighter">Air Superiority</span><span className="text-[10px] font-bold font-mono">{c.stats.military.air.toFixed(0)}</span></div>
-                      <div className="flex-1 space-y-0.5"><span className="text-[6px] text-muted-foreground uppercase font-bold block tracking-tighter">Naval Power</span><span className="text-[10px] font-bold font-mono">{c.stats.military.naval.toFixed(0)}</span></div>
-                    </div>
                   </div>
                 );
               })}
@@ -692,16 +679,16 @@ export default function VantagePoint() {
             <Button variant="ghost" className={cn("flex flex-col items-center gap-1 h-full py-2 flex-1 rounded-none", mode === 'none' && !rightSidebarOpen && "bg-black/5 text-black")} onClick={() => { setMode('none'); setRightSidebarOpen(false); }}>
               <Globe className="h-5 w-5" /><span className="text-[8px] uppercase font-bold">Map</span>
             </Button>
-            <Button variant="ghost" className={cn("flex flex-col items-center gap-1 h-full py-2 flex-1 rounded-none", mode.startsWith('battle') && "bg-black/5 text-black")} onClick={() => { setMode('battle-menu'); setRightSidebarOpen(false); }}>
-              <Swords className="h-5 w-5" /><span className="text-[8px] uppercase font-bold">Conflict</span>
+            <Button variant="ghost" className={cn("flex flex-col items-center gap-1 h-full py-2 flex-1 rounded-none", mode === 'war-menu' && "bg-black/5 text-black")} onClick={() => { setMode('war-menu'); setRightSidebarOpen(false); setWarSideA([]); setWarSideB([]); }}>
+              <Swords className="h-5 w-5" /><span className="text-[8px] uppercase font-bold">War</span>
             </Button>
-            <Button variant="ghost" className={cn("flex flex-col items-center gap-1 h-full py-2 flex-1 rounded-none", mode.startsWith('war') && "bg-black/5 text-black")} onClick={() => { setMode('war-menu'); setRightSidebarOpen(false); }}>
-              <Shield className="h-5 w-5" /><span className="text-[8px] uppercase font-bold">Diplomacy</span>
+            <Button variant="ghost" className={cn("flex flex-col items-center gap-1 h-full py-2 flex-1 rounded-none", mode === 'alliance-menu' && "bg-black/5 text-black")} onClick={() => { setMode('alliance-menu'); setRightSidebarOpen(false); setAllianceSelection([]); }}>
+              <Handshake className="h-5 w-5" /><span className="text-[8px] uppercase font-bold">Alliance</span>
             </Button>
-            <Button variant="ghost" className={cn("flex flex-col items-center gap-1 h-full py-2 flex-1 rounded-none", mode.startsWith('merge') && "bg-black/5 text-black")} onClick={() => { setMode('merge-menu'); setRightSidebarOpen(false); }}>
+            <Button variant="ghost" className={cn("flex flex-col items-center gap-1 h-full py-2 flex-1 rounded-none", mode === 'merge-menu' && "bg-black/5 text-black")} onClick={() => { setMode('merge-menu'); setRightSidebarOpen(false); }}>
               <Combine className="h-5 w-5" /><span className="text-[8px] uppercase font-bold">Union</span>
             </Button>
-            <Button variant="ghost" className={cn("flex flex-col items-center gap-1 h-full py-2 flex-1 rounded-none", mode.startsWith('split') && "bg-black/5 text-black")} onClick={() => { setMode('split-menu'); setRightSidebarOpen(false); }}>
+            <Button variant="ghost" className={cn("flex flex-col items-center gap-1 h-full py-2 flex-1 rounded-none", mode === 'split-menu' && "bg-black/5 text-black")} onClick={() => { setMode('split-menu'); setRightSidebarOpen(false); }}>
               <Scissors className="h-5 w-5" /><span className="text-[8px] uppercase font-bold">Split</span>
             </Button>
             <Button variant="ghost" className={cn("flex flex-col items-center gap-1 h-full py-2 flex-1 rounded-none", rightSidebarOpen && "bg-black/5 text-black")} onClick={() => { setRightSidebarOpen(true); }}>
