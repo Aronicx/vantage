@@ -84,6 +84,19 @@ function getDistance(p1: Point, p2: Point): number {
 }
 
 /**
+ * Checks if a settlement has direct access to the sea.
+ */
+function isCoastal(coords: Point, landPointSet: Set<string>, gridSize: number = 5): boolean {
+  const neighbors = [
+    {x: coords.x + gridSize, y: coords.y},
+    {x: coords.x - gridSize, y: coords.y},
+    {x: coords.x, y: coords.y + gridSize},
+    {x: coords.x, y: coords.y - gridSize}
+  ];
+  return neighbors.some(n => !landPointSet.has(`${n.x},${n.y}`));
+}
+
+/**
  * Checks if two countries share a land border based on their point proximity.
  */
 function checkSharingLandBorder(c1: Country, c2: Country, gridSize: number = 5): boolean {
@@ -107,17 +120,7 @@ function scoreCityForCapital(s: Settlement, c: Country, landPointSet: Set<string
   const powerScore = (s.stats.economy * 1.5) + (s.stats.population * 10);
   const milScore = (s.stats.military.ground + s.stats.military.air + s.stats.military.naval) * 0.8;
   
-  let isCoastal = false;
-  const neighbors = [
-    {x: s.coords.x + gridSize, y: s.coords.y},
-    {x: s.coords.x - gridSize, y: s.coords.y},
-    {x: s.coords.x, y: s.coords.y + gridSize},
-    {x: s.coords.x, y: s.coords.y - gridSize}
-  ];
-  if (neighbors.some(n => !landPointSet.has(`${n.x},${n.y}`))) {
-    isCoastal = true;
-  }
-  const coastalBonus = isCoastal ? 50 : 0;
+  const coastalBonus = isCoastal(s.coords, landPointSet, gridSize) ? 50 : 0;
 
   const distToCenter = getDistance(s.coords, c.center);
   const safetyScore = Math.max(0, 100 - distToCenter);
@@ -184,13 +187,13 @@ function rebuildCountryMetadata(country: Country, landPointSet: Set<string>, gri
     }
     currentCapital = {
       id: `${country.id}-cap-auto-${Date.now()}`,
-      name: "New Capital",
+      name: "Provisional Capital",
       type: 'capital',
       coords: closestPoint,
       ownerId: country.id,
       stats: {
-        economy: 20,
-        population: 0.5,
+        economy: 15,
+        population: 0.4,
         military: { ground: 5, air: 2, naval: 0 }
       }
     };
@@ -397,6 +400,8 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   if (!c1 || !c2) return { state, result: 'Error' };
 
   const hasLandBorder = checkSharingLandBorder(c1, c2);
+  const landSet = new Set(state.landPointSet);
+  const gridSize = 5;
 
   const calculatePower = (c: Country) => {
     const ground = hasLandBorder ? c.stats.military.ground : 0;
@@ -421,6 +426,10 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   const winner = { ...state.countries.find(c => c.id === winnerId)! };
   const loser = { ...state.countries.find(c => c.id === loserId)! };
 
+  // Geographic conflict intensity
+  const isNavalWar = (!winner.stats.isLandlocked || !loser.stats.isLandlocked);
+  
+  // War Exhaustion
   winner.stats.warReadiness = Math.max(30, winner.stats.warReadiness - 12);
   loser.stats.warReadiness = Math.max(10, loser.stats.warReadiness - 28);
 
@@ -428,6 +437,29 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
     .sort((a,b) => getDistance(a.coords, winner.center) - getDistance(b.coords, winner.center))[0];
 
   if (!targetCity) return { state, result: "Frontlines stable. No targets reachable." };
+
+  // Regional damage calculation
+  const targetIsCoastal = isCoastal(targetCity.coords, landSet, gridSize);
+  let damageFactor = 0.8; // Standard battle damage (20% loss)
+  
+  if (isNavalWar) {
+    if (targetIsCoastal) {
+      damageFactor = 0.6; // Coastal regions take major naval strikes (40% loss)
+    } else {
+      damageFactor = 0.9; // Inland regions are shielded from direct naval fire (10% loss)
+    }
+  }
+
+  // Apply damage to the captured city
+  targetCity.stats = {
+    economy: targetCity.stats.economy * damageFactor,
+    population: targetCity.stats.population * damageFactor,
+    military: {
+      ground: targetCity.stats.military.ground * damageFactor,
+      air: targetCity.stats.military.air * damageFactor,
+      naval: targetCity.stats.military.naval * damageFactor,
+    }
+  };
 
   let capturedCapital = targetCity.type === 'capital';
   if (capturedCapital) {
@@ -439,9 +471,40 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   winner.settlements.push(targetCity);
   loser.settlements = loser.settlements.filter(s => s.id !== targetCity.id);
 
+  // General wartime decline for all other cities in participant nations
+  const applyGeneralDecline = (countries: Country[]) => {
+    return countries.map(c => {
+      if (c.id !== winnerId && c.id !== loserId) return c;
+      const declineFactor = c.id === loserId ? 0.95 : 0.98; // War tax
+      
+      return {
+        ...c,
+        settlements: c.settlements.map(s => {
+          // Coastal cities in the loser's land take extra structural damage if it's a naval war
+          let localDecline = declineFactor;
+          if (isNavalWar && c.id === loserId && isCoastal(s.coords, landSet, gridSize)) {
+            localDecline *= 0.9; // Extra 10% structural loss for coastal infrastructure
+          }
+          
+          return {
+            ...s,
+            stats: {
+              economy: s.stats.economy * localDecline,
+              population: s.stats.population * localDecline,
+              military: {
+                ground: s.stats.military.ground * localDecline,
+                air: s.stats.military.air * localDecline,
+                naval: s.stats.military.naval * localDecline,
+              }
+            }
+          };
+        })
+      };
+    });
+  };
+
   const transferredPoints: Point[] = [];
   const remainingPoints: Point[] = [];
-  const gridSize = 5;
 
   loser.points.forEach(p => {
     const distToCaptured = getDistance(p, targetCity.coords);
@@ -458,23 +521,27 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   winner.points.push(...transferredPoints);
   loser.points = remainingPoints;
 
-  const landSet = new Set(state.landPointSet);
   const updatedWinner = rebuildCountryMetadata(winner, landSet, gridSize);
   const updatedLoser = rebuildCountryMetadata(loser, landSet, gridSize);
 
-  let nextCountries = state.countries.map(c => {
+  let nextCountries = applyGeneralDecline(state.countries.map(c => {
     if (c.id === winner.id) return updatedWinner;
     if (c.id === loser.id) return updatedLoser;
     return c;
-  });
+  }));
 
   if (updatedLoser.points.length < 20 || updatedLoser.settlements.length === 0) {
     nextCountries = nextCountries.filter(c => c.id !== loserId);
   }
 
-  const borderAlert = !hasLandBorder ? " (Air/Naval Operation Only)" : "";
+  const borderAlert = !hasLandBorder ? " (Air/Naval Operation)" : "";
+  const navalContext = isNavalWar ? (targetIsCoastal ? " Coastal infrastructure targeted." : " Inland shielded from naval fire.") : "";
   const captureDesc = capturedCapital ? `Seized the capital ${targetCity.name}!` : `Captured ${targetCity.name}.`;
-  return { state: { ...state, countries: nextCountries }, result: `${captureDesc}${borderAlert} Frontlines shifted.` };
+  
+  return { 
+    state: { ...state, countries: nextCountries }, 
+    result: `${captureDesc}${borderAlert}${navalContext} Frontlines shifted.` 
+  };
 }
 
 export function renameCountry(state: GameState, id: string, newName: string): GameState {
@@ -588,7 +655,6 @@ export function executeAllianceWar(state: GameState): GameState {
   const getPower = (all: Alliance) => {
     const memberCountries = state.countries.filter(c => all.countryIds.includes(c.id));
     
-    // Check if alliance as a whole shares a border with any target country in other alliances
     const enemyMembers = state.countries.filter(c => !all.countryIds.includes(c.id) && c.allianceId);
     let sharesBorder = false;
     for (const m of memberCountries) {
