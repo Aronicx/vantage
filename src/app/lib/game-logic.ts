@@ -85,6 +85,18 @@ function getDistance(p1: Point, p2: Point): number {
   return Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
 }
 
+function getPointsOnLine(p1: Point, p2: Point, count: number): Point[] {
+  const points: Point[] = [];
+  for (let i = 1; i < count; i++) {
+    const t = i / count;
+    points.push({
+      x: p1.x + (p2.x - p1.x) * t,
+      y: p1.y + (p2.y - p1.y) * t
+    });
+  }
+  return points;
+}
+
 function isCoastal(coords: Point, landPointSet: Set<string>, gridSize: number = 5): boolean {
   const neighbors = [
     {x: coords.x + gridSize, y: coords.y},
@@ -392,18 +404,68 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
   const isAttacker2 = mode === 'defender' || mode === 'mutual';
   const isDefender2 = mode === 'attacker' || mode === 'mutual';
 
-  const calculatePower = (c: Country, isAttacking: boolean, isDefending: boolean) => {
-    // If no land border, ground forces cannot attack
+  const pointMap = new Map<string, string>();
+  state.countries.forEach(c => {
+    c.points.forEach(p => pointMap.set(`${p.x},${p.y}`, c.id));
+  });
+
+  const getAirLogistics = (attacker: Country, target: Country) => {
+    if (hasLandBorder) return { effectiveness: 1.0, message: "" };
+    
+    const linePoints = getPointsOnLine(attacker.center, target.center, 15);
+    let oceanPoints = 0;
+    const interveningCountryIds = new Set<string>();
+
+    linePoints.forEach(p => {
+      const key = `${Math.round(p.x/gridSize)*gridSize},${Math.round(p.y/gridSize)*gridSize}`;
+      if (!landSet.has(key)) {
+        oceanPoints++;
+      } else {
+        const ownerId = pointMap.get(key);
+        if (ownerId && ownerId !== attacker.id && ownerId !== target.id) {
+          interveningCountryIds.add(ownerId);
+        }
+      }
+    });
+
+    let effectiveness = 1.0;
+    let logs = "";
+
+    // Ocean transit penalty (45% effectiveness)
+    if (oceanPoints > linePoints.length * 0.5) {
+      effectiveness *= 0.45;
+      logs += " [Over-Ocean Logistics]";
+    }
+
+    // Interception from violated airspace
+    interveningCountryIds.forEach(id => {
+      const ic = state.countries.find(c => c.id === id);
+      if (ic) {
+        // Interception strength based on air power
+        const penalty = Math.min(0.6, ic.stats.military.air / 400); 
+        effectiveness *= (1 - penalty);
+        logs += ` [Interception over ${ic.name}]`;
+      }
+    });
+
+    return { effectiveness, message: logs };
+  };
+
+  const airLogistics1 = isAttacker1 ? getAirLogistics(c1, c2) : { effectiveness: 1, message: "" };
+  const airLogistics2 = isAttacker2 ? getAirLogistics(c2, c1) : { effectiveness: 1, message: "" };
+
+  const calculatePower = (c: Country, isAttacking: boolean, isDefending: boolean, airEffectiveness: number) => {
     let ground = (hasLandBorder || isDefending) ? c.stats.military.ground : 0;
     if (!hasLandBorder && isAttacking) ground = 0;
 
-    let air = c.stats.military.air;
+    // Apply long-range air penalties for attackers
+    let air = c.stats.military.air * (isAttacking ? airEffectiveness : 1.0);
+    
     let naval = c.stats.isLandlocked ? 0 : c.stats.military.naval;
     
-    // Naval engagement rules
     if (!hasLandBorder && !c.stats.isLandlocked) {
-      if (isAttacking) naval *= 0.7; // 70% effectiveness for naval invasion
-      if (isDefending) naval *= 2.0; // 200% defensive bonus for coastal waters
+      if (isAttacking) naval *= 0.7; 
+      if (isDefending) naval *= 2.0; 
     }
 
     return (
@@ -412,8 +474,8 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
     ) * (0.4 + (c.stats.warReadiness / 100) * 0.6);
   };
 
-  const p1 = calculatePower(c1, isAttacker1, isDefender1) * (0.975 + Math.random() * 0.05);
-  const p2 = calculatePower(c2, isAttacker2, isDefender2) * (0.975 + Math.random() * 0.05);
+  const p1 = calculatePower(c1, isAttacker1, isDefender1, airLogistics1.effectiveness) * (0.975 + Math.random() * 0.05);
+  const p2 = calculatePower(c2, isAttacker2, isDefender2, airLogistics2.effectiveness) * (0.975 + Math.random() * 0.05);
 
   const winnerId = forcedWinnerId || (p1 > p2 ? c1.id : c2.id);
   const loserId = winnerId === id1 ? id2 : id1;
@@ -520,11 +582,12 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
 
   const borderAlert = !hasLandBorder ? " (Air/Naval Operation)" : "";
   const navalContext = isNavalWar ? (targetIsCoastal ? " Coastal infrastructure targeted." : " Inland shielded from naval fire.") : "";
+  const logContext = (winnerId === id1 ? airLogistics1.message : airLogistics2.message);
   const modeLabel = mode === 'mutual' ? "Mutual conflict" : mode === 'attacker' ? "Initiated assault" : "Counter-attack";
   
   return { 
     state: { ...state, countries: nextCountries }, 
-    result: `${modeLabel}: ${capturedCapital ? `Seized capital ${targetCity.name}!` : `Captured ${targetCity.name}.`}${borderAlert}${navalContext}` 
+    result: `${modeLabel}: ${capturedCapital ? `Seized capital ${targetCity.name}!` : `Captured ${targetCity.name}.`}${borderAlert}${navalContext}${logContext}` 
   };
 }
 
