@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   generateNewWorld, 
   processTick, 
@@ -69,7 +69,11 @@ export default function VantagePoint() {
   const [splitNames, setSplitNames] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
-  const [controlsOpen, setControlsOpen] = useState(true);
+  
+  // Sidebar states
+  const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
+
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -78,13 +82,16 @@ export default function VantagePoint() {
 
   useEffect(() => {
     if (isMobile) {
-      setControlsOpen(false);
+      setLeftSidebarOpen(false);
+      setRightSidebarOpen(false);
+    } else {
+      setLeftSidebarOpen(true);
     }
   }, [isMobile]);
 
   useEffect(() => {
     if (world?.gameStarted && !world.isPaused) {
-      const interval = 30000;
+      const interval = 10000; // Faster ticks for testing, but typically 30s
       timerRef.current = setInterval(() => {
         setWorld(prev => prev ? processTick(prev) : null);
       }, interval);
@@ -132,6 +139,11 @@ export default function VantagePoint() {
       }
     } else if (mode === 'split-select') {
       setSelection([c.id]);
+    } else {
+      // Normal click opens stats for that country
+      setRightSidebarOpen(true);
+      setEditingId(null);
+      // Logic to scroll to country in list could go here
     }
   };
 
@@ -203,6 +215,11 @@ export default function VantagePoint() {
     toast({ title: "Map Refined", description: "National administrative color has been updated." });
   };
 
+  const sortedCountries = useMemo(() => {
+    if (!world) return [];
+    return [...world.countries].sort((a,b) => b.stats.economy - a.stats.economy);
+  }, [world?.countries]);
+
   if (!world || !world.gameStarted) {
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-white text-black gap-8 p-4 text-center">
@@ -226,318 +243,314 @@ export default function VantagePoint() {
   const isModeActive = mode !== 'none' && mode !== 'stats-panel';
 
   return (
-    <div className="h-screen w-screen relative overflow-hidden flex flex-col font-body bg-[#F8FAFC]">
-      <div className="absolute top-4 left-4 right-4 z-40 flex items-center justify-between pointer-events-none">
-        <div className="pointer-events-auto flex items-center gap-1 bg-white/90 backdrop-blur-md border border-black/10 p-1 shadow-sm">
-           <Button size="icon" variant="ghost" className="h-7 w-7 rounded-none" onClick={() => setControlsOpen(!controlsOpen)}>
-             {controlsOpen ? (isMobile ? <ChevronDown className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />) : (isMobile ? <ChevronUp className="h-4 w-4" /> : <Menu className="h-4 w-4" />)}
-           </Button>
-           <div className="hidden sm:block w-px h-4 bg-black/10 mx-1" />
-           <div className="px-2 py-0.5 text-center min-w-[60px]">
-             <span className="text-[7px] text-muted-foreground uppercase block font-bold leading-none mb-0.5">Year</span>
+    <div className="h-screen w-screen flex flex-col font-body bg-[#F8FAFC] overflow-hidden">
+      {/* Top Status Bar - Slim & Non-Blocking */}
+      <header className="h-12 border-b border-black/10 bg-white/95 backdrop-blur-md z-50 flex items-center justify-between px-4 shrink-0 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <Globe className="h-4 w-4" />
+            <h1 className="text-xs font-bold uppercase tracking-widest hidden sm:block">Vantage Point</h1>
+          </div>
+          <div className="h-4 w-px bg-black/10" />
+          <div className="flex flex-col justify-center">
+             <span className="text-[7px] text-muted-foreground uppercase font-bold leading-none mb-0.5">Simulation Year</span>
              <span className="text-[11px] font-bold leading-none tracking-tight">{world.gameYear}</span>
           </div>
         </div>
 
-        <div className="pointer-events-auto flex items-center gap-1 bg-white/90 backdrop-blur-md border border-black/10 p-1 shadow-sm">
-          <Button size="icon" variant="ghost" className="h-7 w-7 rounded-none" onClick={() => setWorld(w => w ? {...w, isPaused: !w.isPaused} : null)}>
+        <div className="flex items-center gap-1">
+          <Button size="icon" variant="ghost" className="h-8 w-8 rounded-none" onClick={() => setWorld(w => w ? {...w, isPaused: !w.isPaused} : null)}>
             {world.isPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
           </Button>
-          <div className="w-px h-4 bg-black/10" />
-          <Button size="icon" variant="ghost" className="h-7 w-7 rounded-none" onClick={initWorld}>
+          <Button size="icon" variant="ghost" className="h-8 w-8 rounded-none" onClick={initWorld}>
             <RotateCcw className="h-3.5 w-3.5" />
           </Button>
+          <div className="h-4 w-px bg-black/10 mx-1" />
+          <Button 
+            size="icon" 
+            variant={rightSidebarOpen ? "default" : "ghost"} 
+            className="h-8 w-8 rounded-none" 
+            onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
+          >
+            <ListOrdered className="h-3.5 w-3.5" />
+          </Button>
         </div>
-      </div>
+      </header>
 
-      <main className="flex-1 relative flex flex-col overflow-hidden">
-        <div className="flex-1 bg-[#E5F1F5] flex items-center justify-center overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Left Action Sidebar - Docks and Resizes Map Area */}
+        <aside 
+          className={cn(
+            "border-r border-black/10 bg-white z-40 transition-all duration-300 flex flex-col shrink-0",
+            leftSidebarOpen ? "w-[280px]" : "w-0 overflow-hidden"
+          )}
+        >
+          <div className="p-4 border-b border-black/5 flex items-center justify-between">
+            <span className="text-[10px] uppercase font-bold tracking-widest">Control Console</span>
+            <Button variant="ghost" size="icon" className="h-6 w-6 rounded-none" onClick={() => setLeftSidebarOpen(false)}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+          </div>
+          
+          <ScrollArea className="flex-1">
+            <div className="p-2 space-y-2">
+              <Button 
+                variant={mode.startsWith('battle') ? "default" : "outline"} 
+                className={cn("w-full justify-start gap-3 h-11 text-[10px] uppercase font-bold rounded-none px-4", mode.startsWith('battle') && "bg-black text-white")}
+                onClick={() => { setMode('battle-menu'); setSelection([]); }}
+              >
+                <Swords className="h-4 w-4" /> Local Conflict
+              </Button>
+              <Button 
+                variant={mode.startsWith('war') ? "default" : "outline"} 
+                className={cn("w-full justify-start gap-3 h-11 text-[10px] uppercase font-bold rounded-none px-4", mode.startsWith('war') && "bg-black text-white")}
+                onClick={() => { setMode('war-menu'); setSelection([]); }}
+              >
+                <Shield className="h-4 w-4" /> Diplomatic War
+              </Button>
+              <Button 
+                variant={mode.startsWith('merge') ? "default" : "outline"} 
+                className={cn("w-full justify-start gap-3 h-11 text-[10px] uppercase font-bold rounded-none px-4", mode.startsWith('merge') && "bg-black text-white")}
+                onClick={() => { setMode('merge-menu'); setSelection([]); setMergeName(''); }}
+              >
+                <Combine className="h-4 w-4" /> Territorial Union
+              </Button>
+              <Button 
+                variant={mode.startsWith('split') ? "default" : "outline"} 
+                className={cn("w-full justify-start gap-3 h-11 text-[10px] uppercase font-bold rounded-none px-4", mode.startsWith('split') && "bg-black text-white")}
+                onClick={() => { setMode('split-menu'); setSelection([]); setSplitParts(2); setSplitNames(["", ""]); }}
+              >
+                <Scissors className="h-4 w-4" /> State Partition
+              </Button>
+            </div>
+
+            {/* Contextual Sub-Console for Actions */}
+            <div className="px-2 pb-4">
+              {mode !== 'none' && (
+                <Card className="rounded-none border-black/10 bg-black/[0.01] shadow-none">
+                  <CardHeader className="p-3 border-b border-black/5">
+                    <CardTitle className="text-[9px] uppercase font-bold flex items-center justify-between">
+                      {mode.split('-')[0]} Settings
+                      <Button variant="ghost" size="icon" className="h-4 w-4" onClick={() => setMode('none')}><X className="h-2 w-2" /></Button>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-3 space-y-4">
+                    {/* Mode Specific UI content */}
+                    {mode.startsWith('battle') && (
+                      <div className="space-y-3">
+                         <div className="space-y-1">
+                           {selection.map(id => (
+                             <div key={id} className="text-[8px] font-bold uppercase truncate border-l-2 border-black pl-2 py-1 bg-white">
+                               {world.countries.find(c => c.id === id)?.name}
+                             </div>
+                           ))}
+                           {selection.length === 0 && <p className="text-[8px] text-muted-foreground uppercase italic text-center py-2">Select 2 nations on map</p>}
+                         </div>
+                         <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none" disabled={selection.length !== 2} onClick={startBattle}>
+                           EXECUTE PROTOCOL
+                         </Button>
+                      </div>
+                    )}
+
+                    {mode.startsWith('merge') && (
+                      <div className="space-y-3">
+                         <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+                           {selection.map(id => (
+                             <div key={id} className="text-[8px] font-bold uppercase truncate border-l-2 border-black pl-2 py-1 bg-white">
+                               {world.countries.find(c => c.id === id)?.name}
+                             </div>
+                           ))}
+                           {selection.length === 0 && <p className="text-[8px] text-muted-foreground uppercase italic text-center py-2">Select nations on map</p>}
+                         </div>
+                         {selection.length >= 2 && (
+                           <div className="space-y-1.5">
+                             <label className="text-[7px] font-bold uppercase text-muted-foreground">Union Identity</label>
+                             <Input 
+                               placeholder="e.g. United Federation"
+                               className="h-8 text-[10px] rounded-none border-black/20 focus-visible:ring-black px-2 bg-white"
+                               value={mergeName}
+                               onChange={(e) => setMergeName(e.target.value)}
+                             />
+                             <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none mt-2" disabled={selection.length < 2 || !mergeName.trim()} onClick={handleMerge}>
+                               PROCLAIM UNION
+                             </Button>
+                           </div>
+                         )}
+                      </div>
+                    )}
+
+                    {mode.startsWith('split') && (
+                      <div className="space-y-3">
+                        {selection.length === 1 ? (
+                          <div className="space-y-3">
+                            <div className="text-[9px] font-bold uppercase truncate border-l-2 border-black pl-2 py-1 bg-white">
+                              {world.countries.find(c => c.id === selection[0])?.name}
+                            </div>
+                            <div className="space-y-1.5">
+                              <div className="flex justify-between items-center text-[8px] font-bold uppercase text-muted-foreground">
+                                <span>Successors</span>
+                                <span className="text-black text-[10px]">{splitParts}</span>
+                              </div>
+                              <Slider value={[splitParts]} onValueChange={(val) => setSplitParts(val[0])} min={2} max={6} step={1} className="py-1" />
+                            </div>
+                            <div className="space-y-2">
+                              {Array.from({ length: splitParts }).map((_, i) => (
+                                <Input key={i} placeholder={`Successor ${i + 1}`} className="h-7 text-[10px] rounded-none border-black/15 bg-white px-2" value={splitNames[i] || ""} onChange={(e) => {
+                                  const next = [...splitNames];
+                                  next[i] = e.target.value;
+                                  setSplitNames(next);
+                                }} />
+                              ))}
+                            </div>
+                            <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none" disabled={loading || splitNames.some(n => !n.trim())} onClick={handleSplit}>
+                              PARTITION
+                            </Button>
+                          </div>
+                        ) : (
+                          <p className="text-[8px] text-muted-foreground uppercase italic text-center py-2">Select 1 nation on map</p>
+                        )}
+                      </div>
+                    )}
+
+                    {mode.startsWith('war') && (
+                      <div className="space-y-3">
+                        <div className="space-y-1 max-h-24 overflow-y-auto">
+                          {world.alliances.map(a => (
+                            <div key={a.id} className="flex items-center gap-2 bg-white p-1.5 border border-black/5">
+                              <div className="w-2 h-2" style={{ backgroundColor: a.color }} />
+                              <span className="text-[8px] font-bold uppercase truncate">{a.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-1 gap-1.5 pt-2">
+                          <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none" onClick={() => setMode('war-select')}>
+                            FORM NEW ALLIANCE
+                          </Button>
+                          {world.alliances.length >= 2 && (
+                            <Button size="sm" variant="destructive" className="w-full text-[9px] uppercase font-bold rounded-none" onClick={executeWar}>
+                              GLOBAL CONFLICT
+                            </Button>
+                          )}
+                        </div>
+                        {mode === 'war-select' && (
+                          <div className="pt-2 border-t border-black/5">
+                            <p className="text-[8px] font-bold uppercase mb-2">Selected: {selection.length}</p>
+                            <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none" disabled={selection.length < 2} onClick={confirmAlliance}>
+                              CONFIRM BLOC
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </ScrollArea>
+        </aside>
+
+        {/* Floating Toggle for Sidebar when closed */}
+        {!leftSidebarOpen && !isMobile && (
+          <Button 
+            variant="outline" 
+            size="icon" 
+            className="absolute left-4 top-4 z-40 h-8 w-8 rounded-none border-black/10 bg-white shadow-md"
+            onClick={() => setLeftSidebarOpen(true)}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        )}
+
+        {/* Main Map Viewport - Expands to fill available space between Sidebars */}
+        <main className="flex-1 bg-[#E5F1F5] relative overflow-hidden flex items-center justify-center">
            <TacticalMap 
             countries={world.countries} 
             alliances={world.alliances}
             selection={selection}
             onSelectCountry={handleCountryClick}
           />
-        </div>
 
-        <div 
-          className={cn(
-            "z-30 transition-all duration-300 ease-in-out",
-            "md:absolute md:top-20 md:left-6 md:flex md:flex-col md:gap-4 md:w-auto",
-            "absolute bottom-0 left-0 right-0 w-full flex flex-col md:translate-y-0",
-            !controlsOpen && (isMobile ? "translate-y-full" : "-translate-x-full opacity-0")
-          )}
-        >
-          <div className={cn(
-            "transition-all duration-300",
-            isModeActive ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none h-0"
-          )}>
-            {(mode === 'battle-menu' || mode === 'battle-select') && (
-              <Card className="rounded-none border-x-0 border-b border-black/10 shadow-lg bg-white w-full md:w-56 overflow-hidden">
-                <CardHeader className="p-2 border-b border-black/5 flex flex-row items-center justify-between">
-                  <CardTitle className="text-[9px] uppercase font-bold flex items-center gap-2"><Swords className="h-3 w-3" /> Battle Protocol</CardTitle>
-                  <Button variant="ghost" size="icon" className="h-5 w-5 md:hidden" onClick={() => setMode('none')}><X className="h-3 w-3" /></Button>
-                </CardHeader>
-                <CardContent className="p-2 space-y-3">
-                  <div className="space-y-1">
-                    {selection.map(id => (
-                      <div key={id} className="text-[8px] font-bold uppercase truncate border-l-2 border-black pl-1.5 py-0.5">
-                        {world.countries.find(c => c.id === id)?.name}
-                      </div>
-                    ))}
-                    {selection.length === 0 && <p className="text-[8px] text-muted-foreground uppercase italic text-center">Tap 2 nations</p>}
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    {mode === 'battle-menu' ? (
-                      <Button size="sm" className="w-full h-8 text-[9px] uppercase font-bold bg-black text-white rounded-none" onClick={() => setMode('battle-select')}>
-                        SELECT TARGETS
-                      </Button>
-                    ) : (
-                      <div className="grid grid-cols-2 gap-1">
-                        <Button size="sm" className="w-full h-8 text-[9px] uppercase font-bold bg-black text-white rounded-none" disabled={selection.length !== 2} onClick={startBattle}>
-                          EXECUTE
-                        </Button>
-                        <Button variant="ghost" size="sm" className="w-full h-8 text-[9px] uppercase font-bold rounded-none" onClick={() => { setMode('battle-menu'); setSelection([]); }}>
-                          CANCEL
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {(mode === 'war-menu' || mode === 'war-select') && (
-              <Card className="rounded-none border-x-0 border-b border-black/10 shadow-lg bg-white w-full md:w-56 overflow-hidden">
-                <CardHeader className="p-2 border-b border-black/5 flex flex-row items-center justify-between">
-                  <CardTitle className="text-[9px] uppercase font-bold flex items-center gap-2"><Shield className="h-3 w-3" /> Diplomatic Bloc</CardTitle>
-                  <Button variant="ghost" size="icon" className="h-5 w-5 md:hidden" onClick={() => setMode('none')}><X className="h-3 w-3" /></Button>
-                </CardHeader>
-                <CardContent className="p-2 space-y-3">
-                  <div className="space-y-1.5 max-h-[80px] overflow-y-auto pr-1">
-                     <p className="text-[7px] text-muted-foreground uppercase font-bold">Active Blocs: {world.alliances.length}</p>
-                     {world.alliances.map(a => (
-                       <div key={a.id} className="flex items-center gap-2 bg-black/[0.02] p-1">
-                          <div className="w-1.5 h-1.5 shrink-0" style={{ backgroundColor: a.color }} />
-                          <span className="text-[8px] font-bold truncate uppercase">{a.name}</span>
-                       </div>
-                     ))}
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    {mode === 'war-menu' ? (
-                      <div className="space-y-1">
-                        <Button size="sm" className="w-full h-8 text-[9px] uppercase font-bold bg-black text-white rounded-none" onClick={() => setMode('war-select')}>
-                          NEW ALLIANCE
-                        </Button>
-                        {world.alliances.length >= 2 && (
-                           <Button size="sm" variant="destructive" className="w-full h-8 text-[9px] uppercase font-bold rounded-none" onClick={executeWar}>
-                           WORLD WAR
-                         </Button>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="space-y-1">
-                        <p className="text-[8px] font-bold text-center uppercase">Selected: {selection.length}</p>
-                        <div className="grid grid-cols-2 gap-1">
-                          <Button size="sm" className="w-full h-8 text-[9px] uppercase font-bold bg-black text-white rounded-none" disabled={selection.length === 0} onClick={confirmAlliance}>
-                            CONFIRM
-                          </Button>
-                          <Button variant="ghost" size="sm" className="w-full h-8 text-[9px] uppercase font-bold rounded-none" onClick={() => { setMode('war-menu'); setSelection([]); }}>
-                            BACK
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {(mode === 'merge-menu' || mode === 'merge-select') && (
-              <Card className="rounded-none border-x-0 border-b border-black/10 shadow-lg bg-white w-full md:w-64 overflow-hidden">
-                <CardHeader className="p-2 border-b border-black/5 flex flex-row items-center justify-between">
-                  <CardTitle className="text-[9px] uppercase font-bold flex items-center gap-2"><Combine className="h-3 w-3" /> Unification</CardTitle>
-                  <Button variant="ghost" size="icon" className="h-5 w-5 md:hidden" onClick={() => setMode('none')}><X className="h-3 w-3" /></Button>
-                </CardHeader>
-                <CardContent className="p-2 space-y-3">
-                  <div className="space-y-1 max-h-[60px] overflow-y-auto pr-1">
-                    {selection.map(id => (
-                      <div key={id} className="text-[8px] font-bold uppercase truncate border-l-2 border-black pl-1.5 py-0.5">
-                        {world.countries.find(c => c.id === id)?.name}
-                      </div>
-                    ))}
-                    {selection.length === 0 && <p className="text-[8px] text-muted-foreground uppercase italic text-center">Tap states to unite</p>}
-                  </div>
-
-                  {mode === 'merge-select' && selection.length >= 2 && (
-                    <div className="space-y-1">
-                      <label className="text-[7px] font-bold uppercase text-muted-foreground px-1">Unified State Identity</label>
-                      <Input 
-                        placeholder="e.g. Great Federation"
-                        className="h-8 text-[10px] rounded-none border-black/20 focus-visible:ring-black px-2"
-                        value={mergeName}
-                        onChange={(e) => setMergeName(e.target.value)}
-                      />
-                    </div>
-                  )}
-
-                  <div className="flex flex-col gap-1">
-                    {mode === 'merge-menu' ? (
-                      <Button size="sm" className="w-full h-8 text-[9px] uppercase font-bold bg-black text-white rounded-none" onClick={() => setMode('merge-select')}>
-                        CHOOSE STATES
-                      </Button>
-                    ) : (
-                      <div className="grid grid-cols-2 gap-1">
-                        <Button 
-                          size="sm" 
-                          className="w-full h-8 text-[9px] uppercase font-bold bg-black text-white rounded-none" 
-                          disabled={selection.length < 2 || !mergeName.trim()} 
-                          onClick={handleMerge}
-                        >
-                          PROCLAIM
-                        </Button>
-                        <Button variant="ghost" size="sm" className="w-full h-8 text-[9px] uppercase font-bold rounded-none" onClick={() => { setMode('merge-menu'); setSelection([]); setMergeName(''); }}>
-                          CANCEL
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {(mode === 'split-menu' || mode === 'split-select') && (
-              <Card className="rounded-none border-x-0 border-b border-black/10 shadow-lg bg-white w-full md:w-64 overflow-hidden">
-                <CardHeader className="p-2 border-b border-black/5 flex flex-row items-center justify-between">
-                  <CardTitle className="text-[9px] uppercase font-bold flex items-center gap-2"><Scissors className="h-3 w-3" /> State Partition</CardTitle>
-                  <Button variant="ghost" size="icon" className="h-5 w-5 md:hidden" onClick={() => setMode('none')}><X className="h-3 w-3" /></Button>
-                </CardHeader>
-                <CardContent className="p-2 space-y-3">
-                  <div className="space-y-1">
-                    {selection.length > 0 ? (
-                      <div className="text-[9px] font-bold uppercase truncate border-l-2 border-black pl-1.5">
-                        {world.countries.find(c => c.id === selection[0])?.name}
-                      </div>
-                    ) : (
-                      <p className="text-[8px] text-muted-foreground uppercase italic text-center">Tap nation to divide</p>
-                    )}
-                  </div>
-
-                  {mode === 'split-select' && selection.length === 1 && (
-                    <div className="space-y-3">
-                      <div className="space-y-1">
-                        <div className="flex justify-between items-center text-[8px] font-bold uppercase text-muted-foreground">
-                          <span>Successors</span>
-                          <span className="text-black text-[10px]">{splitParts}</span>
-                        </div>
-                        <Slider 
-                          value={[splitParts]}
-                          onValueChange={(val) => setSplitParts(val[0])}
-                          min={2}
-                          max={6}
-                          step={1}
-                          className="py-0.5"
-                        />
-                      </div>
-
-                      <ScrollArea className="h-32 pr-1 border border-black/5 p-1 bg-black/[0.01]">
-                        <div className="space-y-2">
-                          {Array.from({ length: splitParts }).map((_, i) => (
-                            <div key={i} className="space-y-0.5">
-                              <label className="text-[6px] font-bold uppercase text-muted-foreground block px-1">Successor {i + 1}</label>
-                              <Input 
-                                placeholder={`State ${i + 1}`}
-                                className="h-7 text-[10px] rounded-none border-black/15 focus-visible:ring-black bg-white px-2"
-                                value={splitNames[i] || ""}
-                                onChange={(e) => {
-                                  const next = [...splitNames];
-                                  next[i] = e.target.value;
-                                  setSplitNames(next);
-                                }}
-                              />
-                            </div>
+          {/* Mobile Floating Actions Dock - Docked to bottom, minimal footprint */}
+          {isMobile && (
+            <div className="absolute bottom-0 left-0 right-0 p-2 z-40 bg-white/90 backdrop-blur-md border-t border-black/10 flex flex-col gap-2">
+               {isModeActive && (
+                 <div className="max-h-[30vh] overflow-y-auto no-scrollbar border-b border-black/5 pb-2">
+                   {/* Compact Mobile Consoles */}
+                   {mode.startsWith('battle') && (
+                      <div className="flex flex-col gap-2">
+                        <p className="text-[8px] font-bold uppercase tracking-tight text-center">Tap 2 nations to begin conflict</p>
+                        <div className="flex gap-1 justify-center">
+                          {selection.map(id => (
+                            <Badge key={id} variant="outline" className="text-[7px] uppercase font-bold rounded-none px-2 py-0.5">
+                              {world.countries.find(c => c.id === id)?.name}
+                            </Badge>
                           ))}
                         </div>
-                      </ScrollArea>
-
-                      <div className="grid grid-cols-2 gap-1">
-                        <Button 
-                          size="sm" 
-                          className="w-full h-8 text-[9px] uppercase font-bold bg-black text-white rounded-none" 
-                          disabled={loading || splitNames.some(n => !n.trim())}
-                          onClick={handleSplit}
-                        >
-                          PARTITION
-                        </Button>
-                        <Button variant="ghost" size="sm" className="w-full h-8 text-[9px] uppercase font-bold rounded-none" onClick={() => { setMode('split-menu'); setSelection([]); setSplitNames([]); }}>
-                          BACK
+                        <Button size="sm" className="h-9 text-[9px] font-bold uppercase bg-black text-white" disabled={selection.length !== 2} onClick={startBattle}>
+                          Execute Battle
                         </Button>
                       </div>
-                    </div>
-                  )}
+                   )}
+                   {mode.startsWith('merge') && (
+                      <div className="flex flex-col gap-2">
+                        <Input 
+                          placeholder="Union Name..." 
+                          className="h-9 text-[10px] rounded-none border-black/15 bg-white px-2"
+                          value={mergeName}
+                          onChange={(e) => setMergeName(e.target.value)}
+                        />
+                        <Button size="sm" className="h-9 text-[9px] font-bold uppercase bg-black text-white" disabled={selection.length < 2 || !mergeName.trim()} onClick={handleMerge}>
+                          Unify {selection.length} States
+                        </Button>
+                      </div>
+                   )}
+                   {mode.startsWith('split') && selection.length === 1 && (
+                     <div className="space-y-2">
+                       <Slider value={[splitParts]} onValueChange={(val) => setSplitParts(val[0])} min={2} max={6} step={1} />
+                       <Button size="sm" className="w-full h-9 text-[9px] font-bold uppercase bg-black text-white" disabled={splitNames.some(n => !n.trim())} onClick={handleSplit}>
+                         Partition into {splitParts}
+                       </Button>
+                     </div>
+                   )}
+                   {mode.startsWith('war') && (
+                      <div className="flex flex-col gap-1">
+                        <Button size="sm" className="h-8 text-[9px] font-bold uppercase bg-black text-white" onClick={() => setMode('war-select')}>New Alliance</Button>
+                        <Button size="sm" variant="destructive" className="h-8 text-[9px] font-bold uppercase" onClick={executeWar}>Global War</Button>
+                      </div>
+                   )}
+                 </div>
+               )}
+               
+               <div className="flex gap-1 overflow-x-auto no-scrollbar py-1">
+                 <Button variant="outline" className={cn("shrink-0 h-9 px-3 text-[9px] font-bold uppercase rounded-none", mode.startsWith('battle') && "bg-black text-white")} onClick={() => { setMode('battle-menu'); setSelection([]); }}><Swords className="h-3 w-3 mr-1.5" /> Battle</Button>
+                 <Button variant="outline" className={cn("shrink-0 h-9 px-3 text-[9px] font-bold uppercase rounded-none", mode.startsWith('war') && "bg-black text-white")} onClick={() => { setMode('war-menu'); setSelection([]); }}><Shield className="h-3 w-3 mr-1.5" /> War</Button>
+                 <Button variant="outline" className={cn("shrink-0 h-9 px-3 text-[9px] font-bold uppercase rounded-none", mode.startsWith('merge') && "bg-black text-white")} onClick={() => { setMode('merge-menu'); setSelection([]); setMergeName(''); }}><Combine className="h-3 w-3 mr-1.5" /> Merge</Button>
+                 <Button variant="outline" className={cn("shrink-0 h-9 px-3 text-[9px] font-bold uppercase rounded-none", mode.startsWith('split') && "bg-black text-white")} onClick={() => { setMode('split-menu'); setSelection([]); }}><Scissors className="h-3 w-3 mr-1.5" /> Split</Button>
+               </div>
+            </div>
+          )}
+        </main>
 
-                  {mode === 'split-menu' && (
-                    <Button size="sm" className="w-full h-8 text-[9px] uppercase font-bold bg-black text-white rounded-none" onClick={() => setMode('split-select')}>
-                      SELECT TARGET
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-          </div>
-
-          <div className="bg-white/95 backdrop-blur-md border-t md:border border-black/10 p-1 flex md:flex-col gap-0.5 shadow-2xl overflow-x-auto no-scrollbar">
-            <Button 
-              variant={mode.startsWith('battle') ? "default" : "ghost"} 
-              className={cn("shrink-0 justify-center md:justify-start gap-1.5 h-10 md:h-10 text-[9px] uppercase font-bold rounded-none px-3", mode.startsWith('battle') && "bg-black text-white")}
-              onClick={() => { setMode('battle-menu'); setSelection([]); }}
-            >
-              <Swords className="h-3.5 w-3.5" /> <span className="hidden md:inline">LOCAL WAR</span>
-            </Button>
-            <Button 
-              variant={mode.startsWith('war') ? "default" : "ghost"} 
-              className={cn("shrink-0 justify-center md:justify-start gap-1.5 h-10 md:h-10 text-[9px] uppercase font-bold rounded-none px-3", mode.startsWith('war') && "bg-black text-white")}
-              onClick={() => { setMode('war-menu'); setSelection([]); }}
-            >
-              <Shield className="h-3.5 w-3.5" /> <span className="hidden md:inline">BLOC WAR</span>
-            </Button>
-            <Button 
-              variant={mode.startsWith('merge') ? "default" : "ghost"} 
-              className={cn("shrink-0 justify-center md:justify-start gap-1.5 h-10 md:h-10 text-[9px] uppercase font-bold rounded-none px-3", mode.startsWith('merge') && "bg-black text-white")}
-              onClick={() => { setMode('merge-menu'); setSelection([]); setMergeName(''); }}
-            >
-              <Combine className="h-3.5 w-3.5" /> <span className="hidden md:inline">MERGE</span>
-            </Button>
-            <Button 
-              variant={mode.startsWith('split') ? "default" : "ghost"} 
-              className={cn("shrink-0 justify-center md:justify-start gap-1.5 h-10 md:h-10 text-[9px] uppercase font-bold rounded-none px-3", mode.startsWith('split') && "bg-black text-white")}
-              onClick={() => { setMode('split-menu'); setSelection([]); setSplitParts(2); setSplitNames(["", ""]); }}
-            >
-              <Scissors className="h-3.5 w-3.5" /> <span className="hidden md:inline">SPLIT</span>
-            </Button>
-            <Button 
-              variant={mode === 'stats-panel' ? "default" : "ghost"} 
-              className={cn("shrink-0 justify-center md:justify-start gap-1.5 h-10 md:h-10 text-[9px] uppercase font-bold rounded-none px-3", mode === 'stats-panel' && "bg-black text-white")}
-              onClick={() => { setMode(mode === 'stats-panel' ? 'none' : 'stats-panel'); setEditingId(null); }}
-            >
-              <ListOrdered className="h-3.5 w-3.5" /> <span className="hidden md:inline">RANKINGS</span>
-            </Button>
-          </div>
-        </div>
-      </main>
-
-      {mode === 'stats-panel' && (
-        <aside className="fixed inset-y-0 right-0 w-full sm:w-[400px] h-full bg-white border-l border-black/10 flex flex-col z-50 shadow-2xl animate-in slide-in-from-right duration-500">
-          <div className="p-4 border-b border-black/5 flex items-center justify-between bg-white/50 backdrop-blur-md">
+        {/* Right Stats Sidebar - Docks and Resizes Map Area */}
+        <aside 
+          className={cn(
+            "border-l border-black/10 bg-white z-40 transition-all duration-300 flex flex-col shrink-0 shadow-2xl md:shadow-none",
+            rightSidebarOpen ? (isMobile ? "fixed inset-0 w-full" : "w-[360px]") : "w-0 overflow-hidden"
+          )}
+        >
+          <div className="p-4 border-b border-black/5 flex items-center justify-between bg-white/50 backdrop-blur-md sticky top-0 z-10">
             <div className="space-y-0.5">
               <h2 className="text-lg font-headline font-bold uppercase tracking-widest">Global Atlas</h2>
               <p className="text-[7px] text-muted-foreground uppercase font-bold tracking-tight">Geopolitical Statistics</p>
             </div>
-            <Button size="icon" variant="ghost" onClick={() => { setMode('none'); setEditingId(null); }} className="rounded-none h-8 w-8"><X className="h-4 w-4" /></Button>
+            <Button size="icon" variant="ghost" onClick={() => { setRightSidebarOpen(false); setEditingId(null); }} className="rounded-none h-8 w-8">
+              <X className="h-4 w-4" />
+            </Button>
           </div>
+
           <ScrollArea className="flex-1 bg-white">
             <div className="divide-y divide-black/[0.03]">
-              {[...world.countries].sort((a,b) => b.stats.economy - a.stats.economy).map((c, idx) => {
+              {sortedCountries.map((c, idx) => {
                 const isRecovering = c.recoveryEndYear && world.gameYear <= c.recoveryEndYear;
                 const isBooming = c.boomEndYear && world.gameYear <= c.boomEndYear && world.gameYear > (c.recoveryEndYear || 0);
                 const isEditing = editingId === c.id;
@@ -552,7 +565,7 @@ export default function VantagePoint() {
                           <PopoverTrigger asChild>
                             <Button 
                               variant="outline" 
-                              className="w-5 h-5 shrink-0 border border-black/10 p-0 rounded-none overflow-hidden hover:opacity-80"
+                              className="w-5 h-5 shrink-0 border border-black/10 p-0 rounded-none overflow-hidden hover:opacity-80 shadow-inner"
                               style={{ backgroundColor: c.color }}
                             >
                               <span className="sr-only">Change color</span>
@@ -573,7 +586,7 @@ export default function VantagePoint() {
                               ))}
                             </div>
                             <div className="space-y-1 pt-1 border-t border-black/5">
-                              <label className="text-[7px] font-bold uppercase text-muted-foreground block">Custom Hex</label>
+                              <label className="text-[7px] font-bold uppercase text-muted-foreground block">Hex Color Code</label>
                               <div className="flex gap-1">
                                 <Input 
                                   type="text" 
@@ -614,7 +627,7 @@ export default function VantagePoint() {
                           </div>
                         ) : (
                           <div className="flex items-center gap-2 group/name overflow-hidden">
-                            <h3 className="text-[12px] font-headline font-bold uppercase truncate max-w-[150px] sm:max-w-[200px] tracking-tight">{c.name}</h3>
+                            <h3 className="text-[12px] font-headline font-bold uppercase truncate max-w-[150px] tracking-tight">{c.name}</h3>
                             <Button 
                               variant="ghost" 
                               size="icon" 
@@ -654,16 +667,16 @@ export default function VantagePoint() {
                       </div>
                     </div>
 
-                    <div className="flex gap-4 pt-0.5 px-1 border-t border-black/[0.02]">
-                      <div className="space-y-0.5">
+                    <div className="flex gap-4 pt-1 px-1 border-t border-black/[0.02]">
+                      <div className="flex-1 space-y-0.5">
                         <span className="text-[6px] text-muted-foreground uppercase font-bold block tracking-tighter">Ground</span>
                         <span className="text-[10px] font-bold font-mono">{c.stats.military.ground.toFixed(0)}</span>
                       </div>
-                      <div className="space-y-0.5">
+                      <div className="flex-1 space-y-0.5">
                         <span className="text-[6px] text-muted-foreground uppercase font-bold block tracking-tighter">Air</span>
                         <span className="text-[10px] font-bold font-mono">{c.stats.military.air.toFixed(0)}</span>
                       </div>
-                      <div className="space-y-0.5">
+                      <div className="flex-1 space-y-0.5">
                         <span className="text-[6px] text-muted-foreground uppercase font-bold block tracking-tighter">Naval</span>
                         <span className="text-[10px] font-bold font-mono">{c.stats.military.naval.toFixed(0)}</span>
                       </div>
@@ -674,7 +687,7 @@ export default function VantagePoint() {
             </div>
           </ScrollArea>
         </aside>
-      )}
+      </div>
     </div>
   );
 }

@@ -34,6 +34,10 @@
     --ring: 215 19% 7%;
     
     --radius: 0rem;
+
+    /* Sidebar sizing */
+    --sidebar-width: 280px;
+    --stats-width: 360px;
   }
 }
 
@@ -60,4 +64,13 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.2em;
+}
+
+/* Hide scrollbars but keep functionality */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
