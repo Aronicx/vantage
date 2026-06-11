@@ -102,8 +102,8 @@ function isCoastal(coords: Point, landPointSet: Set<string>, gridSize: number = 
   const neighbors = [
     {x: coords.x + gridSize, y: coords.y},
     {x: coords.x - gridSize, y: coords.y},
-    {x: coords.x, y: gridSize},
-    {x: coords.x, y: -gridSize}
+    {x: coords.x, y: gridSize + coords.y},
+    {x: coords.x, y: coords.y - gridSize}
   ];
   return neighbors.some(n => !landPointSet.has(`${n.x},${n.y}`));
 }
@@ -678,53 +678,91 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
   const target = state.countries.find(c => c.id === targetId);
   if (!target || parts < 2) return state;
 
-  const totalPoints = target.points.length;
-  const seeds: Point[] = [];
+  const gridSize = 5;
+  const totalPointsCount = target.points.length;
+  const pointMap = new Set(target.points.map(p => `${p.x},${p.y}`));
+  const assignedKeys = new Set<string>();
   const pointPartitions: Point[][] = Array.from({ length: parts }, () => []);
-  
-  // 1. Determine target point counts for each splinter based on distributions
-  const quotas = distributions.map(d => Math.floor(totalPoints * (d / 100)));
+  const quotas = distributions.map(d => Math.floor(totalPointsCount * (d / 100)));
 
-  // 2. Select seeds from existing settlements or random points
-  for (let i = 0; i < parts; i++) {
-    const seedIdx = Math.floor((i / parts) * target.points.length);
-    seeds.push(target.points[seedIdx]);
-  }
-
-  // 3. Greedy Territory Expansion: Proportional land area assignment
-  // We sort points by their closest seed and assign them until quotas are reached
-  const pointOptions: { p: Point, sIdx: number, dist: number }[] = [];
-  target.points.forEach(p => {
-    seeds.forEach((s, sIdx) => {
-      pointOptions.push({ p, sIdx, dist: getDistance(p, s) });
-    });
-  });
-
-  pointOptions.sort((a, b) => a.dist - b.dist);
-
-  const assignedPointSet = new Set<string>();
-  const counts = new Array(parts).fill(0);
-
-  for (const option of pointOptions) {
-    const key = `${option.p.x},${option.p.y}`;
-    if (!assignedPointSet.has(key) && counts[option.sIdx] < quotas[option.sIdx]) {
-      pointPartitions[option.sIdx].push(option.p);
-      assignedPointSet.add(key);
-      counts[option.sIdx]++;
+  // 1. Seed selection (Furthest Point Sampling for spread)
+  const seeds: Point[] = [];
+  if (target.points.length > 0) {
+    seeds.push(target.points[0]);
+    for (let i = 1; i < parts; i++) {
+      let furthestPoint = target.points[0];
+      let maxMinDist = -1;
+      for (const p of target.points) {
+        let minDistToSeeds = Infinity;
+        for (const s of seeds) {
+          const d = getDistance(p, s);
+          if (d < minDistToSeeds) minDistToSeeds = d;
+        }
+        if (minDistToSeeds > maxMinDist) {
+          maxMinDist = minDistToSeeds;
+          furthestPoint = p;
+        }
+      }
+      seeds.push(furthestPoint);
     }
   }
 
-  // Cleanup: Assign any remaining points to the nearest non-full partition
+  // 2. Continuous Region Growth (BFS style)
+  const frontiers: Point[][] = seeds.map(s => [s]);
+  seeds.forEach((s, i) => {
+    const key = `${s.x},${s.y}`;
+    pointPartitions[i].push(s);
+    assignedKeys.add(key);
+  });
+
+  let growing = true;
+  while (growing) {
+    growing = false;
+    for (let i = 0; i < parts; i++) {
+      if (pointPartitions[i].length < quotas[i] && frontiers[i].length > 0) {
+        growing = true;
+        
+        // Sort frontier by distance to the origin seed to keep regions compact
+        frontiers[i].sort((a, b) => getDistance(a, seeds[i]) - getDistance(b, seeds[i]));
+        
+        const currentIdx = 0;
+        const current = frontiers[i][currentIdx];
+        frontiers[i].splice(currentIdx, 1);
+
+        const neighbors = [
+          { x: current.x + gridSize, y: current.y },
+          { x: current.x - gridSize, y: current.y },
+          { x: current.x, y: current.y + gridSize },
+          { x: current.x, y: current.y - gridSize }
+        ];
+
+        for (const n of neighbors) {
+          const nKey = `${n.x},${n.y}`;
+          if (pointMap.has(nKey) && !assignedKeys.has(nKey)) {
+            assignedKeys.add(nKey);
+            pointPartitions[i].push(n);
+            frontiers[i].push(n);
+            
+            // Check if we hit quota early during this step
+            if (pointPartitions[i].length >= quotas[i]) break;
+          }
+        }
+      }
+    }
+  }
+
+  // 3. Cleanup: Assign orphaned points to nearest neighbor
   target.points.forEach(p => {
     const key = `${p.x},${p.y}`;
-    if (!assignedPointSet.has(key)) {
+    if (!assignedKeys.has(key)) {
       let bestIdx = 0;
       let minDist = Infinity;
-      seeds.forEach((s, sIdx) => {
+      seeds.forEach((s, idx) => {
         const d = getDistance(p, s);
-        if (d < minDist) { minDist = d; bestIdx = sIdx; }
+        if (d < minDist) { minDist = d; bestIdx = idx; }
       });
       pointPartitions[bestIdx].push(p);
+      assignedKeys.add(key);
     }
   });
 
