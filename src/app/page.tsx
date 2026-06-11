@@ -76,7 +76,6 @@ export default function VantagePoint() {
     initWorld();
   }, []);
 
-  // Auto-collapse on mobile initially
   useEffect(() => {
     if (isMobile) {
       setControlsOpen(false);
@@ -85,7 +84,7 @@ export default function VantagePoint() {
 
   useEffect(() => {
     if (world?.gameStarted && !world.isPaused) {
-      const interval = 30000; // 30 seconds per year
+      const interval = 30000;
       timerRef.current = setInterval(() => {
         setWorld(prev => prev ? processTick(prev) : null);
       }, interval);
@@ -228,7 +227,6 @@ export default function VantagePoint() {
 
   return (
     <div className="h-screen w-screen relative overflow-hidden flex flex-col font-body bg-[#F8FAFC]">
-      {/* Top Banner Status (Mobile Optimized) */}
       <div className="absolute top-4 left-4 right-4 z-40 flex items-center justify-between pointer-events-none">
         <div className="pointer-events-auto flex items-center gap-1 bg-white/90 backdrop-blur-md border border-black/10 p-1 shadow-sm">
            <Button size="icon" variant="ghost" className="h-7 w-7 rounded-none" onClick={() => setControlsOpen(!controlsOpen)}>
@@ -262,23 +260,18 @@ export default function VantagePoint() {
           />
         </div>
 
-        {/* HUD Controls - Optimized for Mobile Selection */}
         <div 
           className={cn(
             "z-30 transition-all duration-300 ease-in-out",
-            // Desktop: Floating Left
             "md:absolute md:top-20 md:left-6 md:flex md:flex-col md:gap-4 md:w-auto",
-            // Mobile: Bottom Panel
             "absolute bottom-0 left-0 right-0 w-full flex flex-col md:translate-y-0",
             !controlsOpen && (isMobile ? "translate-y-full" : "-translate-x-full opacity-0")
           )}
         >
-          {/* Contextual Action Consoles (Compact for Mobile) */}
           <div className={cn(
             "transition-all duration-300",
             isModeActive ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none h-0"
           )}>
-            {/* Battle Console */}
             {(mode === 'battle-menu' || mode === 'battle-select') && (
               <Card className="rounded-none border-x-0 border-b border-black/10 shadow-lg bg-white w-full md:w-56 overflow-hidden">
                 <CardHeader className="p-2 border-b border-black/5 flex flex-row items-center justify-between">
@@ -314,7 +307,6 @@ export default function VantagePoint() {
               </Card>
             )}
 
-            {/* Coalition Hub */}
             {(mode === 'war-menu' || mode === 'war-select') && (
               <Card className="rounded-none border-x-0 border-b border-black/10 shadow-lg bg-white w-full md:w-56 overflow-hidden">
                 <CardHeader className="p-2 border-b border-black/5 flex flex-row items-center justify-between">
@@ -361,7 +353,6 @@ export default function VantagePoint() {
               </Card>
             )}
 
-            {/* Merge Console */}
             {(mode === 'merge-menu' || mode === 'merge-select') && (
               <Card className="rounded-none border-x-0 border-b border-black/10 shadow-lg bg-white w-full md:w-64 overflow-hidden">
                 <CardHeader className="p-2 border-b border-black/5 flex flex-row items-center justify-between">
@@ -415,7 +406,6 @@ export default function VantagePoint() {
               </Card>
             )}
 
-            {/* Split Console */}
             {(mode === 'split-menu' || mode === 'split-select') && (
               <Card className="rounded-none border-x-0 border-b border-black/10 shadow-lg bg-white w-full md:w-64 overflow-hidden">
                 <CardHeader className="p-2 border-b border-black/5 flex flex-row items-center justify-between">
@@ -496,7 +486,6 @@ export default function VantagePoint() {
             )}
           </div>
 
-          {/* Main Action Buttons (Vertical scroll on Mobile) */}
           <div className="bg-white/95 backdrop-blur-md border-t md:border border-black/10 p-1 flex md:flex-col gap-0.5 shadow-2xl overflow-x-auto no-scrollbar">
             <Button 
               variant={mode.startsWith('battle') ? "default" : "ghost"} 
@@ -537,7 +526,6 @@ export default function VantagePoint() {
         </div>
       </main>
 
-      {/* Global Rankings Sidebar */}
       {mode === 'stats-panel' && (
         <aside className="fixed inset-y-0 right-0 w-full sm:w-[400px] h-full bg-white border-l border-black/10 flex flex-col z-50 shadow-2xl animate-in slide-in-from-right duration-500">
           <div className="p-4 border-b border-black/5 flex items-center justify-between bg-white/50 backdrop-blur-md">
@@ -560,7 +548,6 @@ export default function VantagePoint() {
                       <div className="flex items-center gap-3 flex-1 overflow-hidden">
                         <span className="text-[9px] font-bold opacity-20 shrink-0">#{idx + 1}</span>
                         
-                        {/* Color Picker Popover */}
                         <Popover>
                           <PopoverTrigger asChild>
                             <Button 
