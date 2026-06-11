@@ -13,7 +13,8 @@ import {
   splitCountry,
   POLITICAL_COLORS,
   GameState, 
-  Country 
+  Country,
+  BattleMode
 } from './lib/game-logic';
 import { TacticalMap } from '@/components/game/TacticalMap';
 import { 
@@ -54,6 +55,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 type InteractionMode = 'none' | 'battle-menu' | 'battle-select' | 'war-menu' | 'war-select' | 'stats-panel' | 'merge-menu' | 'merge-select' | 'split-menu' | 'split-select';
 
@@ -63,6 +65,7 @@ export default function VantagePoint() {
   const [world, setWorld] = useState<GameState | null>(null);
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<InteractionMode>('none');
+  const [battleMode, setBattleMode] = useState<BattleMode>('attacker');
   const [selection, setSelection] = useState<string[]>([]);
   const [mergeName, setMergeName] = useState('');
   const [splitParts, setSplitParts] = useState(2);
@@ -124,7 +127,7 @@ export default function VantagePoint() {
   };
 
   const handleCountryClick = (c: Country) => {
-    if (mode === 'battle-select') {
+    if (mode === 'battle-select' || mode === 'battle-menu') {
       if (selection.includes(c.id)) {
         setSelection(selection.filter(id => id !== c.id));
       } else if (selection.length < 2) {
@@ -146,7 +149,7 @@ export default function VantagePoint() {
 
   const startBattle = () => {
     if (selection.length !== 2 || !world) return;
-    const { state, result } = executeBattle(world, selection[0], selection[1]);
+    const { state, result } = executeBattle(world, selection[0], selection[1], battleMode);
     setWorld(state);
     toast({ title: "Operation Concluded", description: result });
     setSelection([]);
@@ -330,7 +333,17 @@ export default function VantagePoint() {
                   </CardHeader>
                   <CardContent className="p-3 space-y-4">
                     {mode.startsWith('battle') && (
-                      <div className="space-y-3">
+                      <div className="space-y-4">
+                         <div className="space-y-1.5">
+                           <label className="text-[7px] font-bold uppercase text-muted-foreground">War Mode</label>
+                           <Tabs value={battleMode} onValueChange={(val) => setBattleMode(val as BattleMode)}>
+                             <TabsList className="grid grid-cols-3 h-8 p-1 rounded-none bg-black/5">
+                               <TabsTrigger value="attacker" className="text-[8px] uppercase font-bold rounded-none">Attack</TabsTrigger>
+                               <TabsTrigger value="defender" className="text-[8px] uppercase font-bold rounded-none">Defend</TabsTrigger>
+                               <TabsTrigger value="mutual" className="text-[8px] uppercase font-bold rounded-none">Mutual</TabsTrigger>
+                             </TabsList>
+                           </Tabs>
+                         </div>
                          <div className="space-y-1">
                            {selection.map(id => (
                              <div key={id} className="text-[8px] font-bold uppercase truncate border-l-2 border-black pl-2 py-1 bg-white">
@@ -464,19 +477,29 @@ export default function VantagePoint() {
           {isMobile && (
             <div className="absolute bottom-0 left-0 right-0 p-2 z-40 bg-white/90 backdrop-blur-md border-t border-black/10 flex flex-col gap-2">
                {isModeActive && (
-                 <div className="max-h-[30vh] overflow-y-auto no-scrollbar border-b border-black/5 pb-2">
+                 <div className="max-h-[35vh] overflow-y-auto no-scrollbar border-b border-black/5 pb-2 px-1">
                    {mode.startsWith('battle') && (
-                      <div className="flex flex-col gap-2">
-                        <p className="text-[8px] font-bold uppercase tracking-tight text-center">Tap 2 nations to begin conflict</p>
-                        <div className="flex gap-1 justify-center">
+                      <div className="flex flex-col gap-3">
+                        <div className="space-y-1.5">
+                           <label className="text-[8px] font-bold uppercase text-muted-foreground block text-center">War Mode</label>
+                           <Tabs value={battleMode} onValueChange={(val) => setBattleMode(val as BattleMode)}>
+                             <TabsList className="grid grid-cols-3 h-9 p-1 rounded-none bg-black/5">
+                               <TabsTrigger value="attacker" className="text-[9px] uppercase font-bold rounded-none">Attack</TabsTrigger>
+                               <TabsTrigger value="defender" className="text-[9px] uppercase font-bold rounded-none">Defend</TabsTrigger>
+                               <TabsTrigger value="mutual" className="text-[9px] uppercase font-bold rounded-none">Mutual</TabsTrigger>
+                             </TabsList>
+                           </Tabs>
+                         </div>
+                        <p className="text-[8px] font-bold uppercase tracking-tight text-center">Tap 2 nations on map</p>
+                        <div className="flex gap-1 justify-center flex-wrap">
                           {selection.map(id => (
                             <Badge key={id} variant="outline" className="text-[7px] uppercase font-bold rounded-none px-2 py-0.5">
                               {world.countries.find(c => c.id === id)?.name}
                             </Badge>
                           ))}
                         </div>
-                        <Button size="sm" className="h-9 text-[9px] font-bold uppercase bg-black text-white" disabled={selection.length !== 2} onClick={startBattle}>
-                          Execute Battle
+                        <Button size="sm" className="h-10 text-[9px] font-bold uppercase bg-black text-white" disabled={selection.length !== 2} onClick={startBattle}>
+                          Execute {battleMode} Protocol
                         </Button>
                       </div>
                    )}

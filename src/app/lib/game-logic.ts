@@ -63,6 +63,8 @@ export interface Country {
   recoveryEndYear?: number;
 }
 
+export type BattleMode = 'attacker' | 'defender' | 'mutual';
+
 export const POLITICAL_COLORS = [
   '#F28482', '#84A59D', '#F5CAC3', '#F7EDE2', '#F6BD60', 
   '#FF9F1C', '#2EC4B6', '#E71D36', '#CB997E', 
@@ -83,9 +85,6 @@ function getDistance(p1: Point, p2: Point): number {
   return Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
 }
 
-/**
- * Checks if a settlement has direct access to the sea.
- */
 function isCoastal(coords: Point, landPointSet: Set<string>, gridSize: number = 5): boolean {
   const neighbors = [
     {x: coords.x + gridSize, y: coords.y},
@@ -96,9 +95,6 @@ function isCoastal(coords: Point, landPointSet: Set<string>, gridSize: number = 
   return neighbors.some(n => !landPointSet.has(`${n.x},${n.y}`));
 }
 
-/**
- * Checks if two countries share a land border based on their point proximity.
- */
 function checkSharingLandBorder(c1: Country, c2: Country, gridSize: number = 5): boolean {
   const p2Set = new Set(c2.points.map(p => `${p.x},${p.y}`));
   for (const p of c1.points) {
@@ -113,24 +109,15 @@ function checkSharingLandBorder(c1: Country, c2: Country, gridSize: number = 5):
   return false;
 }
 
-/**
- * Calculates a score for a city to determine its fitness as a capital.
- */
 function scoreCityForCapital(s: Settlement, c: Country, landPointSet: Set<string>, gridSize: number = 5): number {
   const powerScore = (s.stats.economy * 1.5) + (s.stats.population * 10);
   const milScore = (s.stats.military.ground + s.stats.military.air + s.stats.military.naval) * 0.8;
-  
   const coastalBonus = isCoastal(s.coords, landPointSet, gridSize) ? 50 : 0;
-
   const distToCenter = getDistance(s.coords, c.center);
   const safetyScore = Math.max(0, 100 - distToCenter);
-
   return powerScore + milScore + coastalBonus + safetyScore;
 }
 
-/**
- * Aggregates all settlement stats into the country's total stats.
- */
 function updateCountryAggregates(country: Country): Country {
   const totalStats: SettlementStats = country.settlements.reduce((acc, s) => ({
     economy: acc.economy + s.stats.economy,
@@ -153,9 +140,6 @@ function updateCountryAggregates(country: Country): Country {
   return country;
 }
 
-/**
- * Ensures country centers, settlement owners, and internal provinces are consistent.
- */
 function rebuildCountryMetadata(country: Country, landPointSet: Set<string>, gridSize: number = 5): Country {
   if (country.points.length === 0) return country;
 
@@ -394,7 +378,7 @@ export function processTick(state: GameState): GameState {
   return { ...state, countries: updatedCountries, gameYear: state.gameYear + 1 };
 }
 
-export function executeBattle(state: GameState, id1: string, id2: string, forcedWinnerId?: string): { state: GameState, result: string } {
+export function executeBattle(state: GameState, id1: string, id2: string, mode: BattleMode = 'attacker', forcedWinnerId?: string): { state: GameState, result: string } {
   const c1 = state.countries.find(c => c.id === id1);
   const c2 = state.countries.find(c => c.id === id2);
   if (!c1 || !c2) return { state, result: 'Error' };
@@ -403,22 +387,33 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   const landSet = new Set(state.landPointSet);
   const gridSize = 5;
 
-  const calculatePower = (c: Country) => {
-    const ground = hasLandBorder ? c.stats.military.ground : 0;
-    const air = c.stats.military.air;
-    const naval = c.stats.isLandlocked ? 0 : c.stats.military.naval;
+  const isAttacker1 = mode === 'attacker' || mode === 'mutual';
+  const isDefender1 = mode === 'defender' || mode === 'mutual';
+  const isAttacker2 = mode === 'defender' || mode === 'mutual';
+  const isDefender2 = mode === 'attacker' || mode === 'mutual';
+
+  const calculatePower = (c: Country, isAttacking: boolean, isDefending: boolean) => {
+    // If no land border, ground forces cannot attack
+    let ground = (hasLandBorder || isDefending) ? c.stats.military.ground : 0;
+    if (!hasLandBorder && isAttacking) ground = 0;
+
+    let air = c.stats.military.air;
+    let naval = c.stats.isLandlocked ? 0 : c.stats.military.naval;
     
+    // Naval engagement rules
+    if (!hasLandBorder && !c.stats.isLandlocked) {
+      if (isAttacking) naval *= 0.7; // 70% effectiveness for naval invasion
+      if (isDefending) naval *= 2.0; // 200% defensive bonus for coastal waters
+    }
+
     return (
       (ground * 1.0 + air * 1.0 + naval * 0.7) * 1.0 +
       (c.stats.economy * 0.15) + (c.stats.population * 2)
     ) * (0.4 + (c.stats.warReadiness / 100) * 0.6);
   };
 
-  const p1Base = calculatePower(c1);
-  const p2Base = calculatePower(c2);
-  
-  const p1 = p1Base * (0.975 + Math.random() * 0.05);
-  const p2 = p2Base * (0.975 + Math.random() * 0.05);
+  const p1 = calculatePower(c1, isAttacker1, isDefender1) * (0.975 + Math.random() * 0.05);
+  const p2 = calculatePower(c2, isAttacker2, isDefender2) * (0.975 + Math.random() * 0.05);
 
   const winnerId = forcedWinnerId || (p1 > p2 ? c1.id : c2.id);
   const loserId = winnerId === id1 ? id2 : id1;
@@ -426,10 +421,8 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   const winner = { ...state.countries.find(c => c.id === winnerId)! };
   const loser = { ...state.countries.find(c => c.id === loserId)! };
 
-  // Geographic conflict intensity
   const isNavalWar = (!winner.stats.isLandlocked || !loser.stats.isLandlocked);
   
-  // War Exhaustion
   winner.stats.warReadiness = Math.max(30, winner.stats.warReadiness - 12);
   loser.stats.warReadiness = Math.max(10, loser.stats.warReadiness - 28);
 
@@ -438,19 +431,14 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
 
   if (!targetCity) return { state, result: "Frontlines stable. No targets reachable." };
 
-  // Regional damage calculation
   const targetIsCoastal = isCoastal(targetCity.coords, landSet, gridSize);
-  let damageFactor = 0.8; // Standard battle damage (20% loss)
+  let damageFactor = 0.8;
   
   if (isNavalWar) {
-    if (targetIsCoastal) {
-      damageFactor = 0.6; // Coastal regions take major naval strikes (40% loss)
-    } else {
-      damageFactor = 0.9; // Inland regions are shielded from direct naval fire (10% loss)
-    }
+    if (targetIsCoastal) damageFactor = 0.6;
+    else damageFactor = 0.9;
   }
 
-  // Apply damage to the captured city
   targetCity.stats = {
     economy: targetCity.stats.economy * damageFactor,
     population: targetCity.stats.population * damageFactor,
@@ -471,21 +459,17 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   winner.settlements.push(targetCity);
   loser.settlements = loser.settlements.filter(s => s.id !== targetCity.id);
 
-  // General wartime decline for all other cities in participant nations
   const applyGeneralDecline = (countries: Country[]) => {
     return countries.map(c => {
       if (c.id !== winnerId && c.id !== loserId) return c;
-      const declineFactor = c.id === loserId ? 0.95 : 0.98; // War tax
-      
+      const declineFactor = c.id === loserId ? 0.95 : 0.98;
       return {
         ...c,
         settlements: c.settlements.map(s => {
-          // Coastal cities in the loser's land take extra structural damage if it's a naval war
           let localDecline = declineFactor;
           if (isNavalWar && c.id === loserId && isCoastal(s.coords, landSet, gridSize)) {
-            localDecline *= 0.9; // Extra 10% structural loss for coastal infrastructure
+            localDecline *= 0.9;
           }
-          
           return {
             ...s,
             stats: {
@@ -536,11 +520,11 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
 
   const borderAlert = !hasLandBorder ? " (Air/Naval Operation)" : "";
   const navalContext = isNavalWar ? (targetIsCoastal ? " Coastal infrastructure targeted." : " Inland shielded from naval fire.") : "";
-  const captureDesc = capturedCapital ? `Seized the capital ${targetCity.name}!` : `Captured ${targetCity.name}.`;
+  const modeLabel = mode === 'mutual' ? "Mutual conflict" : mode === 'attacker' ? "Initiated assault" : "Counter-attack";
   
   return { 
     state: { ...state, countries: nextCountries }, 
-    result: `${captureDesc}${borderAlert}${navalContext} Frontlines shifted.` 
+    result: `${modeLabel}: ${capturedCapital ? `Seized capital ${targetCity.name}!` : `Captured ${targetCity.name}.`}${borderAlert}${navalContext}` 
   };
 }
 
@@ -654,7 +638,6 @@ export function executeAllianceWar(state: GameState): GameState {
 
   const getPower = (all: Alliance) => {
     const memberCountries = state.countries.filter(c => all.countryIds.includes(c.id));
-    
     const enemyMembers = state.countries.filter(c => !all.countryIds.includes(c.id) && c.allianceId);
     let sharesBorder = false;
     for (const m of memberCountries) {
@@ -685,7 +668,7 @@ export function executeAllianceWar(state: GameState): GameState {
   losers.forEach(all => {
     all.countryIds.forEach(cid => {
       const receiver = winner.countryIds[Math.floor(Math.random() * winner.countryIds.length)];
-      const res = executeBattle({ ...state, countries: currentCountries }, receiver, cid, receiver);
+      const res = executeBattle({ ...state, countries: currentCountries }, receiver, cid, 'attacker', receiver);
       currentCountries = res.state.countries;
     });
   });
