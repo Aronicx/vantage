@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -49,7 +50,8 @@ import {
   LogOut,
   Hash,
   Hammer,
-  ArrowRight
+  ArrowRight,
+  Map as MapIcon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -291,7 +293,8 @@ export default function VantagePoint() {
 
   const sortedCountries = useMemo(() => {
     if (!world) return [];
-    return [...world.countries].sort((a,b) => b.stats.economy - a.stats.economy);
+    // Sorting by territory size (points length) as requested for "Rank as per size"
+    return [...world.countries].sort((a,b) => b.points.length - a.points.length);
   }, [world?.countries]);
 
   const splitAllocationTotal = useMemo(() => {
@@ -697,7 +700,7 @@ export default function VantagePoint() {
           <div className="p-4 border-b border-black/5 flex items-center justify-between bg-white/50 backdrop-blur-md sticky top-0 z-10">
             <div className="space-y-0.5">
               <h2 className="text-lg font-headline font-bold uppercase tracking-widest">Global Atlas</h2>
-              <p className="text-[7px] text-muted-foreground uppercase font-bold tracking-tight">Geopolitical Statistics</p>
+              <p className="text-[7px] text-muted-foreground uppercase font-bold tracking-tight">Ranked by Territorial Size</p>
             </div>
             <Button size="icon" variant="ghost" onClick={() => { setRightSidebarOpen(false); setEditingId(null); }} className="rounded-none h-8 w-8">
               <X className="h-4 w-4" />
@@ -722,7 +725,7 @@ export default function VantagePoint() {
                   <div key={c.id} className="p-4 space-y-4 hover:bg-black/[0.01] transition-colors group/row">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3 flex-1 overflow-hidden">
-                        <span className="text-[9px] font-bold opacity-20 shrink-0">#{idx + 1}</span>
+                        <span className="text-[11px] font-bold text-black bg-black/5 w-6 h-6 flex items-center justify-center shrink-0">#{idx + 1}</span>
                         
                         <Popover>
                           <PopoverTrigger asChild>
@@ -809,7 +812,11 @@ export default function VantagePoint() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2 px-1">
+                    <div className="grid grid-cols-4 gap-2 px-1">
+                      <div className="space-y-1">
+                        <span className="text-[7px] text-muted-foreground uppercase font-bold flex items-center gap-1 tracking-tighter"><MapIcon className="h-2 w-2" /> Territory</span>
+                        <p className="text-[10px] font-bold font-mono tracking-tighter">{c.points.length}km²</p>
+                      </div>
                       <div className="space-y-1">
                         <span className="text-[7px] text-muted-foreground uppercase font-bold flex items-center gap-1 tracking-tighter"><TrendingUp className="h-2 w-2" /> Economy</span>
                         <p className="text-[10px] font-bold font-mono tracking-tighter">${c.stats.economy.toFixed(1)}B</p>
@@ -831,15 +838,15 @@ export default function VantagePoint() {
 
                     <div className="flex gap-4 pt-1 px-1 border-t border-black/[0.02]">
                       <div className="flex-1 space-y-0.5">
-                        <span className="text-[6px] text-muted-foreground uppercase font-bold block tracking-tighter">Ground</span>
+                        <span className="text-[6px] text-muted-foreground uppercase font-bold block tracking-tighter">Ground Forces</span>
                         <span className="text-[10px] font-bold font-mono">{c.stats.military.ground.toFixed(0)}</span>
                       </div>
                       <div className="flex-1 space-y-0.5">
-                        <span className="text-[6px] text-muted-foreground uppercase font-bold block tracking-tighter">Air</span>
+                        <span className="text-[6px] text-muted-foreground uppercase font-bold block tracking-tighter">Air Superiority</span>
                         <span className="text-[10px] font-bold font-mono">{c.stats.military.air.toFixed(0)}</span>
                       </div>
                       <div className="flex-1 space-y-0.5">
-                        <span className="text-[6px] text-muted-foreground uppercase font-bold block tracking-tighter">Naval</span>
+                        <span className="text-[6px] text-muted-foreground uppercase font-bold block tracking-tighter">Naval Power</span>
                         <span className="text-[10px] font-bold font-mono">{c.stats.military.naval.toFixed(0)}</span>
                       </div>
                     </div>
