@@ -365,7 +365,8 @@ export function processTick(state: GameState): GameState {
       growth = 1.0 + (excess / penaltyFactor);
     }
 
-    const nextReadiness = Math.min(100, c.stats.warReadiness + 3);
+    // Recover readiness by ~10% per year for a 1-2 year recovery cycle for victors
+    const nextReadiness = Math.min(100, c.stats.warReadiness + 10);
 
     const nextSettlements = c.settlements.map(s => ({
       ...s,
@@ -395,9 +396,9 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
   const c2 = state.countries.find(c => c.id === id2);
   if (!c1 || !c2) return { state, result: 'Error' };
 
-  const hasLandBorder = checkSharingLandBorder(c1, c2);
   const landSet = new Set(state.landPointSet);
   const gridSize = 5;
+  const hasLandBorder = checkSharingLandBorder(c1, c2);
 
   const isAttacker1 = mode === 'attacker' || mode === 'mutual';
   const isDefender1 = mode === 'defender' || mode === 'mutual';
@@ -483,10 +484,21 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
   const winner = { ...state.countries.find(c => c.id === winnerId)! };
   const loser = { ...state.countries.find(c => c.id === loserId)! };
 
+  // Calculate War Readiness losses based on Intensity
+  // Closer fights (intensity ~1.0) cause higher losses for both.
+  const intensity = Math.min(p1, p2) / Math.max(p1, p2); 
+  const totalPower = p1 + p2;
+  const powerScale = Math.log10(Math.max(10, totalPower)) / 2; // Scale based on total military scale
+
+  // Winner typically keeps 80-95% readiness, depending on intensity and scale
+  const winnerPenalty = (5 + (intensity * 10)) * powerScale;
+  // Loser suffers significant collapse
+  const loserPenalty = (25 + (intensity * 25)) * powerScale;
+
+  winner.stats.warReadiness = Math.max(25, winner.stats.warReadiness - winnerPenalty);
+  loser.stats.warReadiness = Math.max(5, loser.stats.warReadiness - loserPenalty);
+
   const isNavalWar = (!winner.stats.isLandlocked || !loser.stats.isLandlocked);
-  
-  winner.stats.warReadiness = Math.max(30, winner.stats.warReadiness - 12);
-  loser.stats.warReadiness = Math.max(10, loser.stats.warReadiness - 28);
 
   const targetCity = [...loser.settlements]
     .sort((a,b) => getDistance(a.coords, winner.center) - getDistance(b.coords, winner.center))[0];
