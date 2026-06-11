@@ -15,6 +15,7 @@ export interface SettlementStats {
   economy: number;
   population: number;
   military: MilitaryStats;
+  warReadiness: number; // 0 to 100
 }
 
 export interface Settlement {
@@ -32,7 +33,7 @@ export interface CountryStats {
   military: MilitaryStats;
   growthRate: number;
   isLandlocked: boolean;
-  warReadiness: number; // 0 to 100
+  warReadiness: number; // Aggregated from settlements
 }
 
 export interface Alliance {
@@ -131,23 +132,33 @@ function scoreCityForCapital(s: Settlement, c: Country, landPointSet: Set<string
 }
 
 function updateCountryAggregates(country: Country): Country {
-  const totalStats: SettlementStats = country.settlements.reduce((acc, s) => ({
+  if (country.settlements.length === 0) {
+    country.stats = { ...country.stats, economy: 0, population: 0, military: { ground: 0, air: 0, naval: 0 }, warReadiness: 0 };
+    return country;
+  }
+
+  const totalStats = country.settlements.reduce((acc, s) => ({
     economy: acc.economy + s.stats.economy,
     population: acc.population + s.stats.population,
     military: {
       ground: acc.military.ground + s.stats.military.ground,
       air: acc.military.air + s.stats.military.air,
       naval: acc.military.naval + s.stats.military.naval,
-    }
+    },
+    weightedReadiness: acc.weightedReadiness + (s.stats.warReadiness * (s.stats.economy + 1))
   }), {
     economy: 0,
     population: 0,
-    military: { ground: 0, air: 0, naval: 0 }
+    military: { ground: 0, air: 0, naval: 0 },
+    weightedReadiness: 0
   });
+
+  const totalWeights = country.settlements.reduce((acc, s) => acc + (s.stats.economy + 1), 0);
 
   country.stats.economy = totalStats.economy;
   country.stats.population = totalStats.population;
   country.stats.military = totalStats.military;
+  country.stats.warReadiness = totalStats.weightedReadiness / totalWeights;
 
   return country;
 }
@@ -190,7 +201,8 @@ export function rebuildCountryMetadata(country: Country, landPointSet: Set<strin
       stats: {
         economy: 15,
         population: 0.4,
-        military: { ground: 5, air: 2, naval: 0 }
+        military: { ground: 5, air: 2, naval: 0 },
+        warReadiness: 100
       }
     };
     country.settlements.push(currentCapital);
@@ -301,7 +313,8 @@ export async function generateNewWorld(width: number, height: number): Promise<G
       stats: {
         economy: 50 * econBonus,
         population: 2 * econBonus,
-        military: { ground: 30 * econBonus, air: 15 * econBonus, naval: 10 * (isLandlocked ? 0 : econBonus) }
+        military: { ground: 30 * econBonus, air: 15 * econBonus, naval: 10 * (isLandlocked ? 0 : econBonus) },
+        warReadiness: 100
       }
     });
 
@@ -322,7 +335,8 @@ export async function generateNewWorld(width: number, height: number): Promise<G
              ground: (isOutpost ? 20 : 15) * econBonus, 
              air: (isOutpost ? 5 : 8) * econBonus, 
              naval: (isLandlocked ? 0 : (isOutpost ? 2 : 5) * econBonus) 
-           }
+           },
+           warReadiness: 100
          }
        });
     }
@@ -365,9 +379,6 @@ export function processTick(state: GameState): GameState {
       growth = 1.0 + (excess / penaltyFactor);
     }
 
-    // Recover readiness by ~10% per year for a 1-2 year recovery cycle for victors
-    const nextReadiness = Math.min(100, c.stats.warReadiness + 10);
-
     const nextSettlements = c.settlements.map(s => ({
       ...s,
       stats: {
@@ -377,14 +388,14 @@ export function processTick(state: GameState): GameState {
           ground: s.stats.military.ground * growth,
           air: s.stats.military.air * growth,
           naval: s.stats.military.naval * growth,
-        }
+        },
+        warReadiness: Math.min(100, s.stats.warReadiness + 10) // Regional recovery
       }
     }));
 
     const updated = {
       ...c,
       settlements: nextSettlements,
-      stats: { ...c.stats, warReadiness: nextReadiness }
     };
     return updateCountryAggregates(updated);
   });
@@ -432,17 +443,14 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
     let effectiveness = 1.0;
     let logs = "";
 
-    // Ocean transit penalty (45% effectiveness)
     if (oceanPoints > linePoints.length * 0.5) {
       effectiveness *= 0.45;
       logs += " [Over-Ocean Logistics]";
     }
 
-    // Interception from violated airspace
     interveningCountryIds.forEach(id => {
       const ic = state.countries.find(c => c.id === id);
       if (ic) {
-        // Interception strength based on air power
         const penalty = Math.min(0.6, ic.stats.military.air / 400); 
         effectiveness *= (1 - penalty);
         logs += ` [Interception over ${ic.name}]`;
@@ -458,10 +466,7 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
   const calculatePower = (c: Country, isAttacking: boolean, isDefending: boolean, airEffectiveness: number) => {
     let ground = (hasLandBorder || isDefending) ? c.stats.military.ground : 0;
     if (!hasLandBorder && isAttacking) ground = 0;
-
-    // Apply long-range air penalties for attackers
     let air = c.stats.military.air * (isAttacking ? airEffectiveness : 1.0);
-    
     let naval = c.stats.isLandlocked ? 0 : c.stats.military.naval;
     
     if (!hasLandBorder && !c.stats.isLandlocked) {
@@ -484,19 +489,22 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
   const winner = { ...state.countries.find(c => c.id === winnerId)! };
   const loser = { ...state.countries.find(c => c.id === loserId)! };
 
-  // Calculate War Readiness losses based on Intensity
-  // Closer fights (intensity ~1.0) cause higher losses for both.
   const intensity = Math.min(p1, p2) / Math.max(p1, p2); 
   const totalPower = p1 + p2;
-  const powerScale = Math.log10(Math.max(10, totalPower)) / 2; // Scale based on total military scale
+  const powerScale = Math.log10(Math.max(10, totalPower)) / 2; 
 
-  // Winner typically keeps 80-95% readiness, depending on intensity and scale
   const winnerPenalty = (5 + (intensity * 10)) * powerScale;
-  // Loser suffers significant collapse
   const loserPenalty = (25 + (intensity * 25)) * powerScale;
 
-  winner.stats.warReadiness = Math.max(25, winner.stats.warReadiness - winnerPenalty);
-  loser.stats.warReadiness = Math.max(5, loser.stats.warReadiness - loserPenalty);
+  // Apply regional readiness penalties
+  winner.settlements = winner.settlements.map(s => ({
+    ...s,
+    stats: { ...s.stats, warReadiness: Math.max(25, s.stats.warReadiness - winnerPenalty) }
+  }));
+  loser.settlements = loser.settlements.map(s => ({
+    ...s,
+    stats: { ...s.stats, warReadiness: Math.max(5, s.stats.warReadiness - loserPenalty) }
+  }));
 
   const isNavalWar = (!winner.stats.isLandlocked || !loser.stats.isLandlocked);
 
@@ -507,13 +515,13 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
 
   const targetIsCoastal = isCoastal(targetCity.coords, landSet, gridSize);
   let damageFactor = 0.8;
-  
   if (isNavalWar) {
     if (targetIsCoastal) damageFactor = 0.6;
     else damageFactor = 0.9;
   }
 
   targetCity.stats = {
+    ...targetCity.stats,
     economy: targetCity.stats.economy * damageFactor,
     population: targetCity.stats.population * damageFactor,
     military: {
@@ -547,6 +555,7 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
           return {
             ...s,
             stats: {
+              ...s.stats,
               economy: s.stats.economy * localDecline,
               population: s.stats.population * localDecline,
               military: {
@@ -633,7 +642,7 @@ export function mergeCountries(state: GameState, ids: string[], customName: stri
       military: { ground: 0, air: 0, naval: 0 },
       growthRate: dominant.stats.growthRate,
       isLandlocked: dominant.stats.isLandlocked,
-      warReadiness: Math.min(...participants.map(p => p.stats.warReadiness))
+      warReadiness: 0 // Will be aggregated
     }
   };
 
@@ -652,13 +661,10 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
     seeds.push(target.points[Math.floor(Math.random() * target.points.length)]);
   }
 
-  // Weighted Voronoi splitting for territory distribution
   target.points.forEach(p => {
     let best = 0;
     let minWeightedDist = Infinity;
     seeds.forEach((s, idx) => {
-      // Weight the distance by the distribution percentage
-      // Higher percentage -> lower weighted distance -> attracts more points
       const weight = distributions[idx] || 1;
       const d = getDistance(p, s) / (weight + 0.1); 
       if (d < minWeightedDist) { minWeightedDist = d; best = idx; }
@@ -674,7 +680,6 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
     
     const ptSet = new Set(pts.map(p => `${p.x},${p.y}`));
     
-    // Distribute and scale settlements stats
     const splinterSettlements = target.settlements
       .filter(s => ptSet.has(`${s.coords.x},${s.coords.y}`))
       .map(s => ({ 
@@ -682,6 +687,7 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
         ownerId: id, 
         type: 'city' as const,
         stats: {
+          ...s.stats,
           economy: s.stats.economy * distFactor,
           population: s.stats.population * distFactor,
           military: {
@@ -709,7 +715,7 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
         },
         growthRate: target.stats.growthRate,
         isLandlocked: target.stats.isLandlocked,
-        warReadiness: target.stats.warReadiness
+        warReadiness: 0 // Aggregated
       }
     };
     return rebuildCountryMetadata(country, landSet, 5);
