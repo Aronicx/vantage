@@ -127,21 +127,32 @@ export default function VantagePoint() {
   };
 
   const handleCountryClick = (c: Country) => {
+    // Battle Selection (Max 2)
     if (mode === 'battle-select' || mode === 'battle-menu') {
       if (selection.includes(c.id)) {
         setSelection(selection.filter(id => id !== c.id));
       } else if (selection.length < 2) {
         setSelection([...selection, c.id]);
       }
-    } else if (mode === 'war-select' || mode === 'merge-select') {
+    } 
+    // Multi-select for War and Merge modes
+    else if (mode === 'war-select' || mode === 'war-menu' || mode === 'merge-select' || mode === 'merge-menu') {
       if (selection.includes(c.id)) {
         setSelection(selection.filter(id => id !== c.id));
       } else {
         setSelection([...selection, c.id]);
       }
-    } else if (mode === 'split-select') {
-      setSelection([c.id]);
-    } else {
+    } 
+    // Single select for Partition/Split
+    else if (mode === 'split-select' || mode === 'split-menu') {
+      if (selection.includes(c.id)) {
+        setSelection([]);
+      } else {
+        setSelection([c.id]);
+      }
+    } 
+    // Default interaction: Open Stats
+    else {
       setRightSidebarOpen(true);
       setEditingId(null);
     }
@@ -438,9 +449,9 @@ export default function VantagePoint() {
                             </Button>
                           )}
                         </div>
-                        {mode === 'war-select' && (
+                        {(mode === 'war-select' || (mode === 'war-menu' && selection.length > 0)) && (
                           <div className="pt-2 border-t border-black/5">
-                            <p className="text-[8px] font-bold uppercase mb-2">Selected: {selection.length}</p>
+                            <p className="text-[8px] font-bold uppercase mb-2">Selected Members: {selection.length}</p>
                             <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none" disabled={selection.length < 2} onClick={confirmAlliance}>
                               CONFIRM BLOC
                             </Button>
@@ -516,12 +527,18 @@ export default function VantagePoint() {
                         </Button>
                       </div>
                    )}
-                   {mode.startsWith('split') && selection.length === 1 && (
+                   {mode.startsWith('split') && (
                      <div className="space-y-2">
-                       <Slider value={[splitParts]} onValueChange={(val) => setSplitParts(val[0])} min={2} max={6} step={1} />
-                       <Button size="sm" className="w-full h-9 text-[9px] font-bold uppercase bg-black text-white" disabled={splitNames.some(n => !n.trim())} onClick={handleSplit}>
-                         Partition into {splitParts}
-                       </Button>
+                       {selection.length === 1 ? (
+                         <>
+                           <Slider value={[splitParts]} onValueChange={(val) => setSplitParts(val[0])} min={2} max={6} step={1} />
+                           <Button size="sm" className="w-full h-9 text-[9px] font-bold uppercase bg-black text-white" disabled={splitNames.some(n => !n.trim())} onClick={handleSplit}>
+                             Partition into {splitParts}
+                           </Button>
+                         </>
+                       ) : (
+                         <p className="text-[8px] font-bold uppercase text-center py-2">Select a nation to split</p>
+                       )}
                      </div>
                    )}
                    {mode.startsWith('war') && (
