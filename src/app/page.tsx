@@ -11,6 +11,8 @@ import {
   renameCountry,
   updateCountryColor,
   splitCountry,
+  disbandAlliance,
+  leaveAlliance,
   POLITICAL_COLORS,
   GameState, 
   Country,
@@ -43,7 +45,8 @@ import {
   Menu,
   ChevronUp,
   ChevronDown,
-  Palette
+  Palette,
+  LogOut
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -136,7 +139,18 @@ export default function VantagePoint() {
       }
     } 
     // Multi-select for War and Merge modes
-    else if (mode === 'war-select' || mode === 'war-menu' || mode === 'merge-select' || mode === 'merge-menu') {
+    else if (mode === 'war-select' || mode === 'war-menu') {
+      if (selection.includes(c.id)) {
+        setSelection(selection.filter(id => id !== c.id));
+      } else {
+        if (c.allianceId) {
+          toast({ variant: "destructive", title: "Access Denied", description: "Country is already member of another alliance." });
+          return;
+        }
+        setSelection([...selection, c.id]);
+      }
+    }
+    else if (mode === 'merge-select' || mode === 'merge-menu') {
       if (selection.includes(c.id)) {
         setSelection(selection.filter(id => id !== c.id));
       } else {
@@ -174,6 +188,20 @@ export default function VantagePoint() {
     setSelection([]);
     toast({ title: "New Coalition", description: `Bloc established with ${selection.length} members.` });
     setMode('war-menu');
+  };
+
+  const handleDisbandAlliance = (id: string) => {
+    if (!world) return;
+    const nextWorld = disbandAlliance(world, id);
+    setWorld(nextWorld);
+    toast({ title: "Alliance Dissolved", description: "All member countries are now independent." });
+  };
+
+  const handleLeaveAlliance = (id: string) => {
+    if (!world) return;
+    const nextWorld = leaveAlliance(world, id);
+    setWorld(nextWorld);
+    toast({ title: "Secession Complete", description: "Country has officially left its alliance." });
   };
 
   const executeWar = () => {
@@ -431,16 +459,32 @@ export default function VantagePoint() {
 
                     {mode.startsWith('war') && (
                       <div className="space-y-3">
-                        <div className="space-y-1 max-h-24 overflow-y-auto">
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          <p className="text-[7px] uppercase font-bold text-muted-foreground">Active Coalitions</p>
                           {world.alliances.map(a => (
-                            <div key={a.id} className="flex items-center gap-2 bg-white p-1.5 border border-black/5">
-                              <div className="w-2 h-2" style={{ backgroundColor: a.color }} />
-                              <span className="text-[8px] font-bold uppercase truncate">{a.name}</span>
+                            <div key={a.id} className="flex flex-col bg-white border border-black/10">
+                              <div className="flex items-center justify-between p-1.5 border-b border-black/5 bg-black/[0.02]">
+                                <div className="flex items-center gap-2 overflow-hidden">
+                                  <div className="w-2 h-2 shrink-0" style={{ backgroundColor: a.color }} />
+                                  <span className="text-[8px] font-bold uppercase truncate">{a.name}</span>
+                                </div>
+                                <Button variant="ghost" size="icon" className="h-4 w-4 text-red-600" onClick={() => handleDisbandAlliance(a.id)}>
+                                  <X className="h-2.5 w-2.5" />
+                                </Button>
+                              </div>
+                              <div className="p-1 flex flex-wrap gap-1">
+                                {a.countryIds.map(cid => (
+                                  <Badge key={cid} variant="outline" className="text-[6px] px-1 py-0 rounded-none border-black/10">
+                                    {world.countries.find(c => c.id === cid)?.name}
+                                  </Badge>
+                                ))}
+                              </div>
                             </div>
                           ))}
+                          {world.alliances.length === 0 && <p className="text-[8px] italic text-muted-foreground text-center">No active alliances</p>}
                         </div>
-                        <div className="grid grid-cols-1 gap-1.5 pt-2">
-                          <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none" onClick={() => setMode('war-select')}>
+                        <div className="grid grid-cols-1 gap-1.5 pt-2 border-t border-black/5">
+                          <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none" onClick={() => { setMode('war-select'); setSelection([]); }}>
                             FORM NEW ALLIANCE
                           </Button>
                           {world.alliances.length >= 2 && (
@@ -449,9 +493,16 @@ export default function VantagePoint() {
                             </Button>
                           )}
                         </div>
-                        {(mode === 'war-select' || (mode === 'war-menu' && selection.length > 0)) && (
-                          <div className="pt-2 border-t border-black/5">
-                            <p className="text-[8px] font-bold uppercase mb-2">Selected Members: {selection.length}</p>
+                        {(mode === 'war-select') && (
+                          <div className="pt-2 border-t border-black/5 space-y-2">
+                            <p className="text-[8px] font-bold uppercase text-center">Tap sovereign nations on map</p>
+                            <div className="flex flex-wrap gap-1">
+                              {selection.map(id => (
+                                <Badge key={id} variant="default" className="text-[7px] px-1.5 py-0.5 rounded-none bg-black text-white">
+                                  {world.countries.find(c => c.id === id)?.name}
+                                </Badge>
+                              ))}
+                            </div>
                             <Button size="sm" className="w-full text-[9px] uppercase font-bold bg-black text-white rounded-none" disabled={selection.length < 2} onClick={confirmAlliance}>
                               CONFIRM BLOC
                             </Button>
@@ -542,9 +593,25 @@ export default function VantagePoint() {
                      </div>
                    )}
                    {mode.startsWith('war') && (
-                      <div className="flex flex-col gap-1">
-                        <Button size="sm" className="h-8 text-[9px] font-bold uppercase bg-black text-white" onClick={() => setMode('war-select')}>New Alliance</Button>
-                        <Button size="sm" variant="destructive" className="h-8 text-[9px] font-bold uppercase" onClick={executeWar}>Global War</Button>
+                      <div className="flex flex-col gap-2">
+                        {mode === 'war-select' ? (
+                          <>
+                            <p className="text-[8px] font-bold uppercase text-center">Tap independent countries</p>
+                            <Button size="sm" className="h-10 text-[9px] font-bold uppercase bg-black text-white" disabled={selection.length < 2} onClick={confirmAlliance}>Confirm Bloc ({selection.length})</Button>
+                          </>
+                        ) : (
+                          <>
+                             <div className="flex gap-1 overflow-x-auto py-1">
+                               {world.alliances.map(a => (
+                                 <Badge key={a.id} className="shrink-0 flex gap-2 items-center" style={{ backgroundColor: a.color }}>
+                                   {a.name} <X className="h-3 w-3" onClick={() => handleDisbandAlliance(a.id)} />
+                                 </Badge>
+                               ))}
+                             </div>
+                             <Button size="sm" className="h-8 text-[9px] font-bold uppercase bg-black text-white" onClick={() => { setMode('war-select'); setSelection([]); }}>New Alliance</Button>
+                             {world.alliances.length >= 2 && <Button size="sm" variant="destructive" className="h-8 text-[9px] font-bold uppercase" onClick={executeWar}>Global War</Button>}
+                          </>
+                        )}
                       </div>
                    )}
                  </div>
@@ -582,6 +649,7 @@ export default function VantagePoint() {
                 const isRecovering = c.stats.warReadiness < 80;
                 const isExhausted = c.stats.warReadiness < 40;
                 const isEditing = editingId === c.id;
+                const currentAlliance = world.alliances.find(a => a.id === c.allianceId);
 
                 return (
                   <div key={c.id} className="p-4 space-y-4 hover:bg-black/[0.01] transition-colors group/row">
@@ -654,19 +722,32 @@ export default function VantagePoint() {
                             </Button>
                           </div>
                         ) : (
-                          <div className="flex items-center gap-2 group/name overflow-hidden">
-                            <h3 className="text-[12px] font-headline font-bold uppercase truncate max-w-[150px] tracking-tight">{c.name}</h3>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-5 w-5 opacity-40 md:opacity-0 md:group-hover/name:opacity-100 transition-opacity rounded-none" 
-                              onClick={() => {
-                                setEditingId(c.id);
-                                setEditingName(c.name);
-                              }}
-                            >
-                              <Pencil className="h-2.5 w-2.5" />
-                            </Button>
+                          <div className="flex flex-col gap-0.5 min-w-0">
+                            <div className="flex items-center gap-2 group/name">
+                              <h3 className="text-[12px] font-headline font-bold uppercase truncate max-w-[150px] tracking-tight">{c.name}</h3>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-5 w-5 opacity-40 md:opacity-0 md:group-hover/name:opacity-100 transition-opacity rounded-none" 
+                                onClick={() => {
+                                  setEditingId(c.id);
+                                  setEditingName(c.name);
+                                }}
+                              >
+                                <Pencil className="h-2.5 w-2.5" />
+                              </Button>
+                            </div>
+                            {currentAlliance && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-[8px] font-bold uppercase text-muted-foreground bg-black/[0.03] px-1.5 py-0.5 border border-black/5 flex items-center gap-1.5">
+                                  <div className="w-1.5 h-1.5" style={{ backgroundColor: currentAlliance.color }} />
+                                  {currentAlliance.name}
+                                </span>
+                                <Button variant="ghost" size="icon" className="h-4 w-4 text-muted-foreground hover:text-red-600" onClick={() => handleLeaveAlliance(c.id)}>
+                                  <LogOut className="h-2.5 w-2.5" />
+                                </Button>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

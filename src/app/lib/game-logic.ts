@@ -152,7 +152,7 @@ function updateCountryAggregates(country: Country): Country {
   return country;
 }
 
-function rebuildCountryMetadata(country: Country, landPointSet: Set<string>, gridSize: number = 5): Country {
+export function rebuildCountryMetadata(country: Country, landPointSet: Set<string>, gridSize: number = 5): Country {
   if (country.points.length === 0) return country;
 
   const pointSet = new Set(country.points.map(p => `${p.x},${p.y}`));
@@ -693,6 +693,37 @@ export function createAlliance(state: GameState, countryIds: string[]): GameStat
     ...state,
     alliances: [...state.alliances, alliance],
     countries: state.countries.map(c => countryIds.includes(c.id) ? { ...c, allianceId: alliance.id } : c)
+  };
+}
+
+export function disbandAlliance(state: GameState, allianceId: string): GameState {
+  return {
+    ...state,
+    alliances: state.alliances.filter(a => a.id !== allianceId),
+    countries: state.countries.map(c => c.allianceId === allianceId ? { ...c, allianceId: undefined } : c)
+  };
+}
+
+export function leaveAlliance(state: GameState, countryId: string): GameState {
+  const country = state.countries.find(c => c.id === countryId);
+  if (!country || !country.allianceId) return state;
+
+  const allianceId = country.allianceId;
+  const updatedAlliances = state.alliances.map(a => {
+    if (a.id !== allianceId) return a;
+    return { ...a, countryIds: a.countryIds.filter(id => id !== countryId) };
+  }).filter(a => a.countryIds.length >= 2);
+
+  return {
+    ...state,
+    alliances: updatedAlliances,
+    countries: state.countries.map(c => {
+      if (c.id === countryId) return { ...c, allianceId: undefined };
+      if (c.allianceId === allianceId && !updatedAlliances.some(ua => ua.id === allianceId)) {
+        return { ...c, allianceId: undefined };
+      }
+      return c;
+    })
   };
 }
 

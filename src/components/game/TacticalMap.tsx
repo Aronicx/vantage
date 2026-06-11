@@ -44,6 +44,25 @@ export const TacticalMap: React.FC<MapProps> = ({
             </feMerge>
           </filter>
 
+          <filter id="alliance-borders">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="blur" />
+            <feColorMatrix 
+              in="blur" 
+              mode="matrix" 
+              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 50 -18" 
+              result="contrast" 
+            />
+            <feMorphology in="contrast" operator="dilate" radius="2.5" result="dilated" />
+            <feComposite in="dilated" in2="contrast" operator="out" result="outline" />
+            <feFlood floodColor="currentColor" result="flood" />
+            <feComposite in="flood" in2="outline" operator="in" result="stroke" />
+            <feComposite in="SourceGraphic" in2="contrast" operator="atop" result="main" />
+            <feMerge>
+              <feMergeNode in="main" />
+              <feMergeNode in="stroke" />
+            </feMerge>
+          </filter>
+
           <filter id="settlement-glow">
             <feGaussianBlur in="SourceAlpha" stdDeviation="1.5" />
             <feOffset dx="0" dy="1" result="offsetblur" />
@@ -58,25 +77,29 @@ export const TacticalMap: React.FC<MapProps> = ({
         </defs>
 
         {/* Territory Masses */}
-        {countries.map(c => (
-          <g 
-            key={c.id} 
-            filter="url(#organic-borders)" 
-            className="cursor-pointer"
-            onClick={() => onSelectCountry(c)}
-          >
-            {c.points.map((p, i) => (
-              <rect 
-                key={`${c.id}-p-${i}`} 
-                x={p.x - 3} 
-                y={p.y - 3} 
-                width={6} 
-                height={6} 
-                fill={c.color} 
-              />
-            ))}
-          </g>
-        ))}
+        {countries.map(c => {
+          const alliance = alliances.find(a => a.id === c.allianceId);
+          return (
+            <g 
+              key={c.id} 
+              filter={alliance ? "url(#alliance-borders)" : "url(#organic-borders)"} 
+              className="cursor-pointer"
+              color={alliance ? alliance.color : "black"}
+              onClick={() => onSelectCountry(c)}
+            >
+              {c.points.map((p, i) => (
+                <rect 
+                  key={`${c.id}-p-${i}`} 
+                  x={p.x - 3} 
+                  y={p.y - 3} 
+                  width={6} 
+                  height={6} 
+                  fill={c.color} 
+                />
+              ))}
+            </g>
+          );
+        })}
 
         {/* Selection Indicator */}
         {selection.map(id => {
@@ -118,7 +141,6 @@ export const TacticalMap: React.FC<MapProps> = ({
               </g>
             ))}
             
-            {/* Label positioning based on capital or center */}
             <text 
               x={c.center.x} 
               y={c.center.y} 
