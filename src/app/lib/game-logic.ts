@@ -125,7 +125,7 @@ function checkSharingLandBorder(c1: Country, c2: Country, gridSize: number = 5):
 function scoreCityForCapital(s: Settlement, c: Country, landPointSet: Set<string>, gridSize: number = 5): number {
   const powerScore = (s.stats.economy * 1.5) + (s.stats.population * 10);
   const milScore = (s.stats.military.ground + s.stats.military.air + s.stats.military.naval) * 0.8;
-  const coastalBonus = isCoastal(s.coords, landPointSet, gridSize) ? 50 : 0;
+  const coastalBonus = isCoastal(s.coords, landPointSet, gridSize) ? 75 : 0; // Coastal cities are more prestigious
   const distToCenter = getDistance(s.coords, c.center);
   const safetyScore = Math.max(0, 100 - distToCenter);
   return powerScore + milScore + coastalBonus + safetyScore;
@@ -192,20 +192,20 @@ export function rebuildCountryMetadata(country: Country, landPointSet: Set<strin
       const d = getDistance(p, newCenter);
       if (d < minDist) { minDist = d; closestPoint = p; }
     }
-    currentCapital = {
+    const capIsCoastal = isCoastal(closestPoint, landPointSet, gridSize);
+    country.settlements.push({
       id: `${country.id}-cap-auto-${Date.now()}`,
       name: "Provisional Capital",
       type: 'capital',
       coords: closestPoint,
       ownerId: country.id,
       stats: {
-        economy: 15,
-        population: 0.4,
-        military: { ground: 5, air: 2, naval: 0 },
+        economy: 15 * (capIsCoastal ? 1.6 : 1.0),
+        population: 0.4 * (capIsCoastal ? 1.3 : 1.0),
+        military: { ground: 5, air: 2, naval: capIsCoastal ? 5 : 0 },
         warReadiness: 100
       }
-    };
-    country.settlements.push(currentCapital);
+    });
   }
 
   const provinceCount = Math.max(3, Math.floor(country.points.length / 100));
@@ -300,9 +300,13 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     }
     c.stats.isLandlocked = isLandlocked;
     
-    const econBonus = isLandlocked ? 0.9 : 1.15;
-    const growthBase = isLandlocked ? 1.008 : 1.014;
-    c.stats.growthRate = growthBase;
+    const countryEconBonus = isLandlocked ? 0.9 : 1.15;
+    c.stats.growthRate = isLandlocked ? 1.008 : 1.014;
+
+    // Coastal specific bonus for the settlement itself
+    const capIsCoastal = isCoastal(c.center, landPointSet, gridSize);
+    const localEconMult = capIsCoastal ? 1.6 : 1.0;
+    const localPopMult = capIsCoastal ? 1.3 : 1.0;
 
     c.settlements.push({ 
       id: `${c.id}-cap`, 
@@ -311,9 +315,13 @@ export async function generateNewWorld(width: number, height: number): Promise<G
       coords: c.center, 
       ownerId: c.id,
       stats: {
-        economy: 50 * econBonus,
-        population: 2 * econBonus,
-        military: { ground: 30 * econBonus, air: 15 * econBonus, naval: 10 * (isLandlocked ? 0 : econBonus) },
+        economy: 50 * countryEconBonus * localEconMult,
+        population: 2 * countryEconBonus * localPopMult,
+        military: { 
+          ground: 30 * countryEconBonus, 
+          air: 15 * countryEconBonus, 
+          naval: 10 * (isLandlocked ? 0 : countryEconBonus * (capIsCoastal ? 2 : 1)) 
+        },
         warReadiness: 100
       }
     });
@@ -322,6 +330,10 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     for(let j=0; j<cityCount; j++) {
        const cityPoint = c.points[Math.floor(Math.random() * c.points.length)];
        const isOutpost = Math.random() > 0.4;
+       const cityIsCoastal = isCoastal(cityPoint, landPointSet, gridSize);
+       const cityEconMult = cityIsCoastal ? 1.6 : 1.0;
+       const cityPopMult = cityIsCoastal ? 1.3 : 1.0;
+
        c.settlements.push({
          id: `${c.id}-city-${j}`,
          name: isOutpost ? `Outpost ${j+1}` : `City ${j+1}`,
@@ -329,12 +341,12 @@ export async function generateNewWorld(width: number, height: number): Promise<G
          coords: cityPoint,
          ownerId: c.id,
          stats: {
-           economy: (isOutpost ? 10 : 25) * econBonus,
-           population: (isOutpost ? 0.5 : 1.5) * econBonus,
+           economy: (isOutpost ? 10 : 25) * countryEconBonus * cityEconMult,
+           population: (isOutpost ? 0.5 : 1.5) * countryEconBonus * cityPopMult,
            military: { 
-             ground: (isOutpost ? 20 : 15) * econBonus, 
-             air: (isOutpost ? 5 : 8) * econBonus, 
-             naval: (isLandlocked ? 0 : (isOutpost ? 2 : 5) * econBonus) 
+             ground: (isOutpost ? 20 : 15) * countryEconBonus, 
+             air: (isOutpost ? 5 : 8) * countryEconBonus, 
+             naval: (isLandlocked ? 0 : (isOutpost ? 2 : 5) * countryEconBonus * (cityIsCoastal ? 1.5 : 1)) 
            },
            warReadiness: 100
          }
@@ -369,6 +381,8 @@ export async function generateNewWorld(width: number, height: number): Promise<G
 export function processTick(state: GameState): GameState {
   if (state.isPaused || !state.gameStarted) return state;
 
+  const landSet = new Set(state.landPointSet);
+
   const updatedCountries = state.countries.map(c => {
     // 1. Calculate base growth factors
     let growth = c.stats.growthRate * (0.999 + Math.random() * 0.002);
@@ -383,6 +397,12 @@ export function processTick(state: GameState): GameState {
     
     const nextSettlements = c.settlements.map(s => {
       let cityGrowth = growth;
+      
+      // Coastal trade bonus: Coastal cities grow slightly faster due to maritime trade
+      if (isCoastal(s.coords, landSet, 5)) {
+        cityGrowth *= 1.005; 
+      }
+
       let cityReadinessGain = 10; 
 
       if (s.stats.warReadiness < 100) {
