@@ -370,28 +370,59 @@ export function processTick(state: GameState): GameState {
   if (state.isPaused || !state.gameStarted) return state;
 
   const updatedCountries = state.countries.map(c => {
+    // 1. Calculate base growth factors
     let growth = c.stats.growthRate * (0.999 + Math.random() * 0.002);
     
-    if (c.recoveryEndYear && state.gameYear < c.recoveryEndYear) {
-      const isVerySmall = c.points.length < 150;
-      const penaltyFactor = isVerySmall ? 15 : 6; 
-      const excess = growth - 1.0;
-      growth = 1.0 + (excess / penaltyFactor);
-    }
+    // 2. National Reconstruction System
+    // Calculate total economy and identify damaged areas
+    const totalEcon = c.stats.economy;
+    const damagedSettlements = c.settlements.filter(s => s.stats.warReadiness < 100);
+    const totalReadinessDeficit = damagedSettlements.reduce((sum, s) => sum + (100 - s.stats.warReadiness), 0);
+    
+    // Reconstruction Fund: Tax a portion of the economy to rebuild
+    // Higher total economy = faster reconstruction
+    const reconTaxRate = totalReadinessDeficit > 0 ? 0.04 : 0; // 4% of growth is diverted if repairs are needed
+    const reconFund = totalEcon * reconTaxRate;
+    
+    const nextSettlements = c.settlements.map(s => {
+      let cityGrowth = growth;
+      let cityReadinessGain = 10; // Base regional recovery
 
-    const nextSettlements = c.settlements.map(s => ({
-      ...s,
-      stats: {
-        economy: s.stats.economy * growth,
-        population: s.stats.population * (1 + (growth - 1) * 0.8),
-        military: {
-          ground: s.stats.military.ground * growth,
-          air: s.stats.military.air * growth,
-          naval: s.stats.military.naval * growth,
-        },
-        warReadiness: Math.min(100, s.stats.warReadiness + 10) // Regional recovery
+      // If city is damaged, apply reconstruction benefits funded by the state
+      if (s.stats.warReadiness < 100) {
+        // Proportion of reconstruction fund allocated to this city
+        const share = (100 - s.stats.warReadiness) / (totalReadinessDeficit || 1);
+        const allocatedBudget = reconFund * share;
+        
+        // Reconstruction boosts growth significantly
+        // The more budget allocated (from a strong economy), the faster the recovery
+        const reconBoost = Math.log10(Math.max(1, allocatedBudget + 1)) * 1.5;
+        cityGrowth *= (1 + (reconBoost / 100));
+        cityReadinessGain += (reconBoost * 5);
       }
-    }));
+
+      // Penalty for losing capital still applies but can be offset by strong reconstruction
+      if (c.recoveryEndYear && state.gameYear < c.recoveryEndYear) {
+        const isVerySmall = c.points.length < 150;
+        const penaltyFactor = isVerySmall ? 15 : 6; 
+        const excess = cityGrowth - 1.0;
+        cityGrowth = 1.0 + (excess / penaltyFactor);
+      }
+
+      return {
+        ...s,
+        stats: {
+          economy: s.stats.economy * cityGrowth,
+          population: s.stats.population * (1 + (cityGrowth - 1) * 0.8),
+          military: {
+            ground: s.stats.military.ground * cityGrowth,
+            air: s.stats.military.air * cityGrowth,
+            naval: s.stats.military.naval * cityGrowth,
+          },
+          warReadiness: Math.min(100, s.stats.warReadiness + cityReadinessGain)
+        }
+      };
+    });
 
     const updated = {
       ...c,
@@ -399,6 +430,7 @@ export function processTick(state: GameState): GameState {
     };
     return updateCountryAggregates(updated);
   });
+
   return { ...state, countries: updatedCountries, gameYear: state.gameYear + 1 };
 }
 

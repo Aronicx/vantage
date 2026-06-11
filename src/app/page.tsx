@@ -47,7 +47,8 @@ import {
   ChevronDown,
   Palette,
   LogOut,
-  Hash
+  Hash,
+  Hammer
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -601,8 +602,9 @@ export default function VantagePoint() {
                 const isExhausted = c.stats.warReadiness < 40;
                 const isEditing = editingId === c.id;
                 const currentAlliance = world.alliances.find(a => a.id === c.allianceId);
+                const isReconstructing = c.settlements.some(s => s.stats.warReadiness < 100);
 
-                // Calculate display growth rate factoring in recovery penalty
+                // Calculate display growth rate
                 const baseGrowth = c.stats.growthRate - 1;
                 const penaltyFactor = isRecovering ? (c.points.length < 150 ? 15 : 6) : 1;
                 const displayGrowth = (baseGrowth / penaltyFactor) * 100;
@@ -693,17 +695,19 @@ export default function VantagePoint() {
                                 <Pencil className="h-2.5 w-2.5" />
                               </Button>
                             </div>
-                            {currentAlliance && (
-                              <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5">
+                              {currentAlliance && (
                                 <span className="text-[8px] font-bold uppercase text-muted-foreground bg-black/[0.03] px-1.5 py-0.5 border border-black/5 flex items-center gap-1.5">
                                   <div className="w-1.5 h-1.5" style={{ backgroundColor: currentAlliance.color }} />
                                   {currentAlliance.name}
                                 </span>
-                                <Button variant="ghost" size="icon" className="h-4 w-4 text-muted-foreground hover:text-red-600" onClick={() => handleLeaveAlliance(c.id)}>
-                                  <LogOut className="h-2.5 w-2.5" />
-                                </Button>
-                              </div>
-                            )}
+                              )}
+                              {isReconstructing && (
+                                <Badge variant="outline" className="text-[6px] uppercase font-bold px-1.5 py-0 rounded-none border-blue-200 bg-blue-50 text-blue-700 animate-pulse-border">
+                                  <Hammer className="h-2 w-2 mr-1" /> Reconstructing
+                                </Badge>
+                              )}
+                            </div>
                           </div>
                         )}
                       </div>
