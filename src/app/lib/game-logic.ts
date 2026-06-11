@@ -125,7 +125,7 @@ function checkSharingLandBorder(c1: Country, c2: Country, gridSize: number = 5):
 function scoreCityForCapital(s: Settlement, c: Country, landPointSet: Set<string>, gridSize: number = 5): number {
   const powerScore = (s.stats.economy * 1.5) + (s.stats.population * 10);
   const milScore = (s.stats.military.ground + s.stats.military.air + s.stats.military.naval) * 0.8;
-  const coastalBonus = isCoastal(s.coords, landPointSet, gridSize) ? 75 : 0; // Coastal cities are more prestigious
+  const coastalBonus = isCoastal(s.coords, landPointSet, gridSize) ? 75 : 0;
   const distToCenter = getDistance(s.coords, c.center);
   const safetyScore = Math.max(0, 100 - distToCenter);
   return powerScore + milScore + coastalBonus + safetyScore;
@@ -202,7 +202,7 @@ export function rebuildCountryMetadata(country: Country, landPointSet: Set<strin
       stats: {
         economy: 15 * (capIsCoastal ? 1.6 : 1.0),
         population: 0.4 * (capIsCoastal ? 1.3 : 1.0),
-        military: { ground: 5, air: 2, naval: capIsCoastal ? 5 : 0 },
+        military: { ground: 15, air: 10, naval: capIsCoastal ? 15 : 0 },
         warReadiness: 100
       }
     });
@@ -303,7 +303,6 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     const countryEconBonus = isLandlocked ? 0.9 : 1.15;
     c.stats.growthRate = isLandlocked ? 1.008 : 1.014;
 
-    // Coastal specific bonus for the settlement itself
     const capIsCoastal = isCoastal(c.center, landPointSet, gridSize);
     const localEconMult = capIsCoastal ? 1.6 : 1.0;
     const localPopMult = capIsCoastal ? 1.3 : 1.0;
@@ -318,9 +317,9 @@ export async function generateNewWorld(width: number, height: number): Promise<G
         economy: 50 * countryEconBonus * localEconMult,
         population: 2 * countryEconBonus * localPopMult,
         military: { 
-          ground: 30 * countryEconBonus, 
-          air: 15 * countryEconBonus, 
-          naval: 10 * (isLandlocked ? 0 : countryEconBonus * (capIsCoastal ? 2 : 1)) 
+          ground: 60 * countryEconBonus, 
+          air: 40 * countryEconBonus, 
+          naval: 30 * (isLandlocked ? 0 : countryEconBonus * (capIsCoastal ? 2 : 1)) 
         },
         warReadiness: 100
       }
@@ -384,10 +383,8 @@ export function processTick(state: GameState): GameState {
   const landSet = new Set(state.landPointSet);
 
   const updatedCountries = state.countries.map(c => {
-    // 1. Calculate base growth factors
     let growth = c.stats.growthRate * (0.999 + Math.random() * 0.002);
     
-    // 2. National Reconstruction System
     const totalEcon = c.stats.economy;
     const damagedSettlements = c.settlements.filter(s => s.stats.warReadiness < 100);
     const totalReadinessDeficit = damagedSettlements.reduce((sum, s) => sum + (100 - s.stats.warReadiness), 0);
@@ -398,7 +395,6 @@ export function processTick(state: GameState): GameState {
     const nextSettlements = c.settlements.map(s => {
       let cityGrowth = growth;
       
-      // Coastal trade bonus: Coastal cities grow slightly faster due to maritime trade
       if (isCoastal(s.coords, landSet, 5)) {
         cityGrowth *= 1.005; 
       }
@@ -506,7 +502,7 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
   const airLogistics1 = isAttacker1 ? getAirLogistics(c1, c2) : { effectiveness: 1, message: "" };
   const airLogistics2 = isAttacker2 ? getAirLogistics(c2, c1) : { effectiveness: 1, message: "" };
 
-  const calculatePower = (c: Country, isAttacking: boolean, isDefending: boolean, airEffectiveness: number) => {
+  const calculatePower = (c: Country, isAttacking: boolean, isDefending: boolean, airEffectiveness: number, cityDefenseBonus: number = 1.0) => {
     let ground = (hasLandBorder || isDefending) ? c.stats.military.ground : 0;
     if (!hasLandBorder && isAttacking) ground = 0;
     let air = c.stats.military.air * (isAttacking ? airEffectiveness : 1.0);
@@ -517,14 +513,33 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
       if (isDefending) naval *= 2.0; 
     }
 
-    return (
+    const basePower = (
       (ground * 1.0 + air * 1.0 + naval * 0.7) * 1.0 +
       (c.stats.economy * 0.15) + (c.stats.population * 2)
     ) * (0.4 + (c.stats.warReadiness / 100) * 0.6);
+
+    return isDefending ? basePower * cityDefenseBonus : basePower;
   };
 
-  const p1 = calculatePower(c1, isAttacker1, isDefender1, airLogistics1.effectiveness) * (0.975 + Math.random() * 0.05);
-  const p2 = calculatePower(c2, isAttacker2, isDefender2, airLogistics2.effectiveness) * (0.975 + Math.random() * 0.05);
+  const getTargetCity = (attacker: Country, defender: Country) => {
+    const nonCapitals = defender.settlements.filter(s => s.type !== 'capital');
+    const isCountryCollapsing = defender.stats.warReadiness < 35 || defender.settlements.length <= 2;
+    
+    if (nonCapitals.length > 0 && !isCountryCollapsing) {
+      return nonCapitals.sort((a,b) => getDistance(a.coords, attacker.center) - getDistance(b.coords, attacker.center))[0];
+    } else {
+      return [...defender.settlements].sort((a,b) => getDistance(a.coords, attacker.center) - getDistance(b.coords, attacker.center))[0];
+    }
+  };
+
+  const targetForC1 = isAttacker1 ? getTargetCity(c1, c2) : undefined;
+  const targetForC2 = isAttacker2 ? getTargetCity(c2, c1) : undefined;
+
+  const defBonus1 = targetForC2?.type === 'capital' ? 2.5 : 1.0;
+  const defBonus2 = targetForC1?.type === 'capital' ? 2.5 : 1.0;
+
+  const p1 = calculatePower(c1, isAttacker1, isDefender1, airLogistics1.effectiveness, defBonus1) * (0.975 + Math.random() * 0.05);
+  const p2 = calculatePower(c2, isAttacker2, isDefender2, airLogistics2.effectiveness, defBonus2) * (0.975 + Math.random() * 0.05);
 
   const winnerId = forcedWinnerId || (p1 > p2 ? c1.id : c2.id);
   const loserId = winnerId === id1 ? id2 : id1;
@@ -549,9 +564,7 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
   }));
 
   const isNavalWar = (!winner.stats.isLandlocked || !loser.stats.isLandlocked);
-
-  const targetCity = [...loser.settlements]
-    .sort((a,b) => getDistance(a.coords, winner.center) - getDistance(b.coords, winner.center))[0];
+  const targetCity = winnerId === id1 ? targetForC1 : targetForC2;
 
   if (!targetCity) return { state, result: "Frontlines stable. No targets reachable." };
 
@@ -705,7 +718,6 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
   const pointPartitions: Point[][] = Array.from({ length: parts }, () => []);
   const quotas = distributions.map(d => Math.floor(totalPointsCount * (d / 100)));
 
-  // 1. Seed selection (Furthest Point Sampling for spread)
   const seeds: Point[] = [];
   if (target.points.length > 0) {
     seeds.push(target.points[0]);
@@ -727,7 +739,6 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
     }
   }
 
-  // 2. Continuous Region Growth (BFS style)
   const frontiers: Point[][] = seeds.map(s => [s]);
   seeds.forEach((s, i) => {
     const key = `${s.x},${s.y}`;
@@ -741,13 +752,9 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
     for (let i = 0; i < parts; i++) {
       if (pointPartitions[i].length < quotas[i] && frontiers[i].length > 0) {
         growing = true;
-        
-        // Sort frontier by distance to the origin seed to keep regions compact
         frontiers[i].sort((a, b) => getDistance(a, seeds[i]) - getDistance(b, seeds[i]));
-        
-        const currentIdx = 0;
-        const current = frontiers[i][currentIdx];
-        frontiers[i].splice(currentIdx, 1);
+        const current = frontiers[i][0];
+        frontiers[i].splice(0, 1);
 
         const neighbors = [
           { x: current.x + gridSize, y: current.y },
@@ -762,8 +769,6 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
             assignedKeys.add(nKey);
             pointPartitions[i].push(n);
             frontiers[i].push(n);
-            
-            // Check if we hit quota early during this step
             if (pointPartitions[i].length >= quotas[i]) break;
           }
         }
@@ -771,7 +776,6 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
     }
   }
 
-  // 3. Cleanup: Assign orphaned points to nearest neighbor
   target.points.forEach(p => {
     const key = `${p.x},${p.y}`;
     if (!assignedKeys.has(key)) {
@@ -791,10 +795,8 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
     const name = successorNames[i] || `${target.name} Splinter ${i+1}`;
     const id = `splinter-${targetId}-${i}-${Date.now()}`;
     const distFactor = (distributions[i] || 1) / 100;
-    
     const ptSet = new Set(pts.map(p => `${p.x},${p.y}`));
     
-    // Proportional Stat Scaling: Cities in this territory receive a share of original nation's power
     const splinterSettlements = target.settlements
       .filter(s => ptSet.has(`${s.coords.x},${s.coords.y}`))
       .map(s => ({ 
