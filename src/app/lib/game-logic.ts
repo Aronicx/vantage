@@ -442,13 +442,29 @@ export function processTick(state: GameState): GameState {
 }
 
 export function executeBattle(state: GameState, id1: string, id2: string, mode: BattleMode = 'attacker', forcedWinnerId?: string): { state: GameState, result: string } {
-  const c1 = state.countries.find(c => c.id === id1);
-  const c2 = state.countries.find(c => c.id === id2);
-  if (!c1 || !c2) return { state, result: 'Error' };
+  const getPartyCountries = (id: string): Country[] => {
+    const alliance = state.alliances.find(a => a.id === id);
+    if (alliance) return state.countries.filter(c => alliance.countryIds.includes(c.id));
+    const country = state.countries.find(c => c.id === id);
+    return country ? [country] : [];
+  };
+
+  const p1Countries = getPartyCountries(id1);
+  const p2Countries = getPartyCountries(id2);
+
+  if (p1Countries.length === 0 || p2Countries.length === 0) return { state, result: 'Invalid participants' };
 
   const landSet = new Set(state.landPointSet);
   const gridSize = 5;
-  const hasLandBorder = checkSharingLandBorder(c1, c2);
+
+  // Determine if any member of party 1 shares a border with any member of party 2
+  let hasLandBorder = false;
+  for (const c1 of p1Countries) {
+    for (const c2 of p2Countries) {
+      if (checkSharingLandBorder(c1, c2)) { hasLandBorder = true; break; }
+    }
+    if (hasLandBorder) break;
+  }
 
   const isAttacker1 = mode === 'attacker' || mode === 'mutual';
   const isDefender1 = mode === 'defender' || mode === 'mutual';
@@ -460,149 +476,101 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
     c.points.forEach(p => pointMap.set(`${p.x},${p.y}`, c.id));
   });
 
-  const getAirLogistics = (attacker: Country, target: Country) => {
-    if (hasLandBorder) return { effectiveness: 1.0, message: "" };
-    
-    const linePoints = getPointsOnLine(attacker.center, target.center, 15);
-    let oceanPoints = 0;
-    const interveningCountryIds = new Set<string>();
+  const calculatePartyPower = (countries: Country[], isAttacking: boolean, isDefending: boolean, targetParty: Country[]) => {
+    let totalPower = 0;
+    const avgReadiness = countries.reduce((sum, c) => sum + c.stats.warReadiness, 0) / countries.length;
 
-    linePoints.forEach(p => {
-      const key = `${Math.round(p.x/gridSize)*gridSize},${Math.round(p.y/gridSize)*gridSize}`;
-      if (!landSet.has(key)) {
-        oceanPoints++;
-      } else {
-        const ownerId = pointMap.get(key);
-        if (ownerId && ownerId !== attacker.id && ownerId !== target.id) {
-          interveningCountryIds.add(ownerId);
-        }
+    countries.forEach(c => {
+      // Land units only contribute if there's a border or they are defending
+      let ground = (hasLandBorder || isDefending) ? c.stats.military.ground : 0;
+      let air = c.stats.military.air;
+      let naval = c.stats.isLandlocked ? 0 : c.stats.military.naval;
+
+      // Distance-based air/naval effectiveness (simplified for asymmetric)
+      let effectiveness = 1.0;
+      if (!hasLandBorder && isAttacking) {
+        // Find closest enemy center
+        let minDist = Infinity;
+        targetParty.forEach(tp => {
+          const d = getDistance(c.center, tp.center);
+          if (d < minDist) minDist = d;
+        });
+        if (minDist > 400) effectiveness = 0.6;
+        else if (minDist > 200) effectiveness = 0.8;
       }
+
+      let base = (
+        (ground * 1.0 + (air * effectiveness) * 1.0 + (naval * effectiveness) * 0.7) * 1.0 +
+        (c.stats.economy * 0.15) + (c.stats.population * 2)
+      ) * (0.4 + (avgReadiness / 100) * 0.6);
+
+      // Defenses (Special bonus if capital is in the party and we are defending)
+      if (isDefending) {
+        const hasCapital = c.settlements.some(s => s.type === 'capital');
+        base *= (1.8 * (hasCapital ? 2.5 : 1.0));
+      }
+      if (isAttacking && mode === 'mutual') base *= 1.2;
+
+      totalPower += base;
     });
 
-    let effectiveness = 1.0;
-    let logs = "";
+    return totalPower;
+  };
 
-    if (oceanPoints > linePoints.length * 0.5) {
-      effectiveness *= 0.45;
-      logs += " [Over-Ocean Logistics]";
-    }
+  const p1Power = calculatePartyPower(p1Countries, isAttacker1, isDefender1, p2Countries) * (0.95 + Math.random() * 0.1);
+  const p2Power = calculatePartyPower(p2Countries, isAttacker2, isDefender2, p1Countries) * (0.95 + Math.random() * 0.1);
 
-    interveningCountryIds.forEach(id => {
-      const ic = state.countries.find(c => c.id === id);
-      if (ic) {
-        const penalty = Math.min(0.6, ic.stats.military.air / 400); 
-        effectiveness *= (1 - penalty);
-        logs += ` [Interception over ${ic.name}]`;
-      }
+  const winnerPartyId = forcedWinnerId ? (getPartyCountries(forcedWinnerId).some(c => p1Countries.map(x=>x.id).includes(c.id)) ? id1 : id2) : (p1Power > p2Power ? id1 : id2);
+  const winnerCountries = winnerPartyId === id1 ? p1Countries : p2Countries;
+  const loserCountries = winnerPartyId === id1 ? p2Countries : p1Countries;
+
+  const intensity = Math.min(p1Power, p2Power) / Math.max(p1Power, p2Power);
+  const powerScale = Math.log10(Math.max(10, p1Power + p2Power)) / 2;
+  const baseWinPenalty = (5 + intensity * 10) * powerScale;
+  const baseLosePenalty = (20 + intensity * 25) * powerScale;
+
+  // Apply penalties to all members of both parties
+  const applyPenalties = (countries: Country[], penalty: number) => {
+    countries.forEach(c => {
+      c.settlements = c.settlements.map(s => ({
+        ...s,
+        stats: { ...s.stats, warReadiness: Math.max(5, s.stats.warReadiness - penalty) }
+      }));
+      updateCountryAggregates(c);
     });
-
-    return { effectiveness, message: logs };
   };
 
-  const airLogistics1 = isAttacker1 ? getAirLogistics(c1, c2) : { effectiveness: 1, message: "" };
-  const airLogistics2 = isAttacker2 ? getAirLogistics(c2, c1) : { effectiveness: 1, message: "" };
+  applyPenalties(p1Countries, winnerPartyId === id1 ? baseWinPenalty : baseLosePenalty);
+  applyPenalties(p2Countries, winnerPartyId === id2 ? baseWinPenalty : baseLosePenalty);
 
-  const calculatePower = (c: Country, isAttacking: boolean, isDefending: boolean, airEffectiveness: number, cityDefenseBonus: number = 1.0) => {
-    let ground = (hasLandBorder || isDefending) ? c.stats.military.ground : 0;
-    if (!hasLandBorder && isAttacking) ground = 0;
-    let air = c.stats.military.air * (isAttacking ? airEffectiveness : 1.0);
-    let naval = c.stats.isLandlocked ? 0 : c.stats.military.naval;
-    
-    if (!hasLandBorder && !c.stats.isLandlocked) {
-      if (isAttacking) naval *= 0.7; 
-      if (isDefending) naval *= 2.0; 
-    }
-
-    let basePower = (
-      (ground * 1.0 + air * 1.0 + naval * 0.7) * 1.0 +
-      (c.stats.economy * 0.15) + (c.stats.population * 2)
-    ) * (0.4 + (c.stats.warReadiness / 100) * 0.6);
-
-    // Apply strict posture multipliers
-    if (isDefending) basePower *= (1.8 * cityDefenseBonus);
-    if (isAttacking && mode === 'mutual') basePower *= 1.2; // Both mobilization
-
-    return basePower;
-  };
-
-  const getTargetCity = (attacker: Country, defender: Country) => {
-    const nonCapitals = defender.settlements.filter(s => s.type !== 'capital');
-    const isCountryCollapsing = defender.stats.warReadiness < 35 || defender.settlements.length <= 2;
-    
-    if (nonCapitals.length > 0 && !isCountryCollapsing) {
-      return nonCapitals.sort((a,b) => getDistance(a.coords, attacker.center) - getDistance(b.coords, attacker.center))[0];
-    } else {
-      return [...defender.settlements].sort((a,b) => getDistance(a.coords, attacker.center) - getDistance(b.coords, attacker.center))[0];
-    }
-  };
-
-  const targetForC1 = isAttacker1 ? getTargetCity(c1, c2) : undefined;
-  const targetForC2 = isAttacker2 ? getTargetCity(c2, c1) : undefined;
-
-  const defBonus1 = targetForC2?.type === 'capital' ? 2.5 : 1.0;
-  const defBonus2 = targetForC1?.type === 'capital' ? 2.5 : 1.0;
-
-  const p1 = calculatePower(c1, isAttacker1, isDefender1, airLogistics1.effectiveness, defBonus1) * (0.975 + Math.random() * 0.05);
-  const p2 = calculatePower(c2, isAttacker2, isDefender2, airLogistics2.effectiveness, defBonus2) * (0.975 + Math.random() * 0.05);
-
-  const winnerId = forcedWinnerId || (p1 > p2 ? c1.id : c2.id);
-  const loserId = winnerId === id1 ? id2 : id1;
+  const isWinnerAttacking = (winnerPartyId === id1 && isAttacker1) || (winnerPartyId === id2 && isAttacker2);
   
-  const winner = { ...state.countries.find(c => c.id === winnerId)! };
-  const loser = { ...state.countries.find(c => c.id === loserId)! };
-
-  const intensity = Math.min(p1, p2) / Math.max(p1, p2); 
-  const totalPower = p1 + p2;
-  const powerScale = Math.log10(Math.max(10, totalPower)) / 2; 
-
-  const baseWinnerPenalty = (5 + (intensity * 10)) * powerScale;
-  const baseLoserPenalty = (25 + (intensity * 25)) * powerScale;
-
-  let p1Penalty = winnerId === id1 ? baseWinnerPenalty : baseLoserPenalty;
-  let p2Penalty = winnerId === id2 ? baseWinnerPenalty : baseLoserPenalty;
-
-  // Refine penalties based on posture and outcome
-  if (winnerId === id1) {
-    if (isAttacker1) p1Penalty *= 1.2; // Offensive wins are costly
-    if (isDefender1) p1Penalty *= 0.7; // Defensive wins are efficient
-    if (isAttacker2) p2Penalty *= 1.5; // Failed assault is disastrous
-  } else {
-    if (isAttacker2) p2Penalty *= 1.2;
-    if (isDefender2) p2Penalty *= 0.7;
-    if (isAttacker1) p1Penalty *= 1.5;
-  }
-
-  c1.settlements = c1.settlements.map(s => ({
-    ...s,
-    stats: { ...s.stats, warReadiness: Math.max(5, s.stats.warReadiness - p1Penalty) }
-  }));
-  c2.settlements = c2.settlements.map(s => ({
-    ...s,
-    stats: { ...s.stats, warReadiness: Math.max(5, s.stats.warReadiness - p2Penalty) }
-  }));
-
-  const isNavalWar = (!winner.stats.isLandlocked || !loser.stats.isLandlocked);
-  const targetCity = winnerId === id1 ? targetForC1 : targetForC2;
-
-  // Decide if territory actually changes hands. 
-  // Defenders winning just push back the assault; they don't capture territory.
-  const isWinnerAttacking = (winnerId === id1 && isAttacker1) || (winnerId === id2 && isAttacker2);
+  // Decide which city is target for capture (from a random loser)
+  const loserTargetCountry = loserCountries[Math.floor(Math.random() * loserCountries.length)];
+  const targetCity = loserTargetCountry.settlements.sort((a,b) => {
+    // Distance to winner party average center
+    const winAvgCenter = {
+      x: winnerCountries.reduce((s,c) => s+c.center.x, 0) / winnerCountries.length,
+      y: winnerCountries.reduce((s,c) => s+c.center.y, 0) / winnerCountries.length
+    };
+    return getDistance(a.coords, winAvgCenter) - getDistance(b.coords, winAvgCenter);
+  })[0];
 
   if (!targetCity || !isWinnerAttacking) {
-    const defenseLog = (!isWinnerAttacking && winnerId !== loserId) ? " Assault successfully repelled." : " Frontlines stable.";
     return { 
-      state: { ...state, countries: state.countries.map(c => c.id === id1 ? updateCountryAggregates(c1) : c.id === id2 ? updateCountryAggregates(c2) : c) }, 
-      result: `Conflict concluded.${defenseLog}` 
+      state: { ...state, countries: state.countries.map(c => {
+        const p1Match = p1Countries.find(x => x.id === c.id);
+        if (p1Match) return p1Match;
+        const p2Match = p2Countries.find(x => x.id === c.id);
+        if (p2Match) return p2Match;
+        return c;
+      })},
+      result: isWinnerAttacking ? "Strategic stalemate: Attack repelled." : "Frontlines stabilized."
     };
   }
 
-  const targetIsCoastal = isCoastal(targetCity.coords, landSet, gridSize);
-  let damageFactor = 0.8;
-  if (isNavalWar) {
-    if (targetIsCoastal) damageFactor = 0.6;
-    else damageFactor = 0.9;
-  }
-
+  // Handle Capture
+  const damageFactor = 0.7;
   targetCity.stats = {
     ...targetCity.stats,
     economy: targetCity.stats.economy * damageFactor,
@@ -612,87 +580,64 @@ export function executeBattle(state: GameState, id1: string, id2: string, mode: 
       air: targetCity.stats.military.air * damageFactor,
       naval: targetCity.stats.military.naval * damageFactor,
     },
-    warReadiness: Math.max(10, Math.min(25, targetCity.stats.warReadiness - 50))
+    warReadiness: 25
   };
 
-  let capturedCapital = targetCity.type === 'capital';
+  const capturedCapital = targetCity.type === 'capital';
   if (capturedCapital) {
-    targetCity.type = 'city'; 
-    loser.recoveryEndYear = state.gameYear + 25; 
+    targetCity.type = 'city';
+    loserTargetCountry.recoveryEndYear = state.gameYear + 25;
   }
 
-  targetCity.ownerId = winnerId;
-  winner.settlements.push(targetCity);
-  loser.settlements = loser.settlements.filter(s => s.id !== targetCity.id);
+  // Assign to the CLOSEST winner country
+  const bestWinner = [...winnerCountries].sort((a, b) => getDistance(a.center, targetCity.coords) - getDistance(b.center, targetCity.coords))[0];
+  targetCity.ownerId = bestWinner.id;
+  
+  // Update the actual arrays
+  bestWinner.settlements.push(targetCity);
+  loserTargetCountry.settlements = loserTargetCountry.settlements.filter(s => s.id !== targetCity.id);
 
-  const applyGeneralDecline = (countries: Country[]) => {
-    return countries.map(c => {
-      if (c.id !== winnerId && c.id !== loserId) return c;
-      const declineFactor = c.id === loserId ? 0.95 : 0.98;
-      return {
-        ...c,
-        settlements: c.settlements.map(s => {
-          let localDecline = declineFactor;
-          if (isNavalWar && c.id === loserId && isCoastal(s.coords, landSet, gridSize)) {
-            localDecline *= 0.9;
-          }
-          return {
-            ...s,
-            stats: {
-              ...s.stats,
-              economy: s.stats.economy * localDecline,
-              population: s.stats.population * localDecline,
-              military: {
-                ground: s.stats.military.ground * localDecline,
-                air: s.stats.military.air * localDecline,
-                naval: s.stats.military.naval * localDecline,
-              }
-            }
-          };
-        })
-      };
-    });
-  };
-
-  const transferredPoints: Point[] = [];
-  const remainingPoints: Point[] = [];
-
-  loser.points.forEach(p => {
-    const distToCaptured = getDistance(p, targetCity.coords);
-    let minDistToRemaining = Infinity;
-    loser.settlements.forEach(s => {
+  // Transfer points
+  const transferred: Point[] = [];
+  const remaining: Point[] = [];
+  loserTargetCountry.points.forEach(p => {
+    const distToCap = getDistance(p, targetCity.coords);
+    let minDistToOthers = Infinity;
+    loserTargetCountry.settlements.forEach(s => {
       const d = getDistance(p, s.coords);
-      if (d < minDistToRemaining) minDistToRemaining = d;
+      if (d < minDistToOthers) minDistToOthers = d;
     });
+    if (distToCap < minDistToOthers * 0.85) transferred.push(p);
+    else remaining.push(p);
+  });
+  bestWinner.points.push(...transferred);
+  loserTargetCountry.points = remaining;
 
-    if (distToCaptured < minDistToRemaining * 0.85) transferredPoints.push(p);
-    else remainingPoints.push(p);
+  rebuildCountryMetadata(bestWinner, landSet, gridSize);
+  rebuildCountryMetadata(loserTargetCountry, landSet, gridSize);
+
+  let nextCountries = state.countries.map(c => {
+    if (c.id === bestWinner.id) return bestWinner;
+    if (c.id === loserTargetCountry.id) return loserTargetCountry;
+    // Check if other members were updated (penalties)
+    const p1Match = p1Countries.find(x => x.id === c.id);
+    if (p1Match) return p1Match;
+    const p2Match = p2Countries.find(x => x.id === c.id);
+    if (p2Match) return p2Match;
+    return c;
   });
 
-  winner.points.push(...transferredPoints);
-  loser.points = remainingPoints;
-
-  const updatedWinner = rebuildCountryMetadata(winner, landSet, gridSize);
-  const updatedLoser = rebuildCountryMetadata(loser, landSet, gridSize);
-
-  let nextCountries = applyGeneralDecline(state.countries.map(c => {
-    if (c.id === winner.id) return updatedWinner;
-    if (c.id === loser.id) return updatedLoser;
-    return c;
-  }));
-
-  if (updatedLoser.points.length < 20 || updatedLoser.settlements.length === 0) {
-    nextCountries = nextCountries.filter(c => c.id !== loserId);
+  // Cleanup collapsed nations
+  if (loserTargetCountry.points.length < 20 || loserTargetCountry.settlements.length === 0) {
+    nextCountries = nextCountries.filter(c => c.id !== loserTargetCountry.id);
   }
 
-  const borderAlert = !hasLandBorder ? " (Air/Naval Operation)" : "";
-  const navalContext = isNavalWar ? (targetIsCoastal ? " Coastal infrastructure targeted." : " Inland shielded from naval fire.") : "";
-  const logContext = (winnerId === id1 ? airLogistics1.message : airLogistics2.message);
-  const modeLabel = mode === 'mutual' ? "Mutual conflict" : mode === 'attacker' ? "Initiated assault" : "Counter-attack";
-  
-  return { 
-    state: { ...state, countries: nextCountries }, 
-    result: `${modeLabel}: ${capturedCapital ? `Seized capital ${targetCity.name}!` : `Captured ${targetCity.name}.`}${borderAlert}${navalContext}${logContext}` 
+  const resultPrefix = winnerPartyId === id1 ? (isAttacker1 ? "Successful offensive" : "Counter-attack victory") : (isAttacker2 ? "Successful offensive" : "Counter-attack victory");
+  const allianceAlert = (winnerCountries.length > 1 || loserCountries.length > 1) ? " (Asymmetric Engagement)" : "";
+
+  return {
+    state: { ...state, countries: nextCountries },
+    result: `${resultPrefix}: ${capturedCapital ? `Seized capital ${targetCity.name}!` : `Captured ${targetCity.name}.`}${allianceAlert}`
   };
 }
 
@@ -701,14 +646,16 @@ export function renameCountry(state: GameState, id: string, newName: string): Ga
 }
 
 export function updateCountryColor(state: GameState, id: string, newColor: string): GameState {
-  return { ...state, countries: state.countries.map(c => c.id === id ? { ...c, color: newColor } : c) };
+  return { ...state, countries: state.countries.map(c => {
+    if (c.id === id) return { ...c, color: newColor };
+    return c;
+  }) };
 }
 
 export function mergeCountries(state: GameState, ids: string[], dominantId?: string, customName?: string): GameState {
   if (ids.length < 2) return state;
   const participants = state.countries.filter(c => ids.includes(c.id));
   
-  // Find identity country: either the provided dominantId or the strongest participant
   const identityCountry = dominantId 
     ? (participants.find(c => c.id === dominantId) || participants[0])
     : [...participants].sort((a,b) => b.stats.economy - a.stats.economy)[0];
@@ -721,13 +668,10 @@ export function mergeCountries(state: GameState, ids: string[], dominantId?: str
     type: s.type === 'capital' ? (s.ownerId === identityCountry.id ? 'capital' : 'city') : s.type 
   }));
 
-  // Consolidate settlements: if somehow there are multiple capitals, ensure only one survives
   let capitals = allSettlements.filter(s => s.type === 'capital');
   if (capitals.length > 1) {
     allSettlements.forEach(s => {
-      if (s.type === 'capital' && s.id !== capitals[0].id) {
-        s.type = 'city';
-      }
+      if (s.type === 'capital' && s.id !== capitals[0].id) s.type = 'city';
     });
   }
 
@@ -738,9 +682,7 @@ export function mergeCountries(state: GameState, ids: string[], dominantId?: str
     points: allPoints,
     settlements: allSettlements,
     stats: {
-      economy: 0,
-      population: 0,
-      military: { ground: 0, air: 0, naval: 0 },
+      economy: 0, population: 0, military: { ground: 0, air: 0, naval: 0 },
       growthRate: identityCountry.stats.growthRate,
       isLandlocked: identityCountry.stats.isLandlocked,
       warReadiness: 0 
@@ -775,10 +717,7 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
           const d = getDistance(p, s);
           if (d < minDistToSeeds) minDistToSeeds = d;
         }
-        if (minDistToSeeds > maxMinDist) {
-          maxMinDist = minDistToSeeds;
-          furthestPoint = p;
-        }
+        if (minDistToSeeds > maxMinDist) { maxMinDist = minDistToSeeds; furthestPoint = p; }
       }
       seeds.push(furthestPoint);
     }
@@ -801,13 +740,7 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
         const current = frontiers[i][0];
         frontiers[i].splice(0, 1);
 
-        const neighbors = [
-          { x: current.x + gridSize, y: current.y },
-          { x: current.x - gridSize, y: current.y },
-          { x: current.x, y: current.y + gridSize },
-          { x: current.x, y: current.y - gridSize }
-        ];
-
+        const neighbors = [{x:current.x+gridSize, y:current.y}, {x:current.x-gridSize, y:current.y}, {x:current.x, y:current.y+gridSize}, {x:current.x, y:current.y-gridSize}];
         for (const n of neighbors) {
           const nKey = `${n.x},${n.y}`;
           if (pointMap.has(nKey) && !assignedKeys.has(nKey)) {
@@ -824,8 +757,7 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
   target.points.forEach(p => {
     const key = `${p.x},${p.y}`;
     if (!assignedKeys.has(key)) {
-      let bestIdx = 0;
-      let minDist = Infinity;
+      let bestIdx = 0; let minDist = Infinity;
       seeds.forEach((s, idx) => {
         const d = getDistance(p, s);
         if (d < minDist) { minDist = d; bestIdx = idx; }
@@ -861,9 +793,7 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
       }));
 
     const country: Country = {
-      ...target,
-      id,
-      name,
+      ...target, id, name,
       color: POLITICAL_COLORS[Math.floor(Math.random() * POLITICAL_COLORS.length)],
       points: pts,
       settlements: splinterSettlements,
@@ -923,9 +853,7 @@ export function leaveAlliance(state: GameState, countryId: string): GameState {
     alliances: updatedAlliances,
     countries: state.countries.map(c => {
       if (c.id === countryId) return { ...c, allianceId: undefined };
-      if (c.allianceId === allianceId && !updatedAlliances.some(ua => ua.id === allianceId)) {
-        return { ...c, allianceId: undefined };
-      }
+      if (c.allianceId === allianceId && !updatedAlliances.some(ua => ua.id === allianceId)) return { ...c, allianceId: undefined };
       return c;
     })
   };
@@ -934,31 +862,12 @@ export function leaveAlliance(state: GameState, countryId: string): GameState {
 export function executeAllianceWar(state: GameState): GameState {
   if (state.alliances.length < 2) return state;
 
-  const getPower = (all: Alliance) => {
-    const memberCountries = state.countries.filter(c => all.countryIds.includes(c.id));
-    const enemyMembers = state.countries.filter(c => !all.countryIds.includes(c.id) && c.allianceId);
-    let sharesBorder = false;
-    for (const m of memberCountries) {
-      for (const e of enemyMembers) {
-        if (checkSharingLandBorder(m, e)) { sharesBorder = true; break; }
-      }
-      if (sharesBorder) break;
-    }
+  const sorted = [...state.alliances].sort((a,b) => {
+    const p1 = state.countries.filter(c => a.countryIds.includes(c.id)).reduce((s,c) => s+c.stats.economy, 0);
+    const p2 = state.countries.filter(c => b.countryIds.includes(c.id)).reduce((s,c) => s+c.stats.economy, 0);
+    return p2 - p1;
+  });
 
-    const ground = sharesBorder ? memberCountries.reduce((sum, c) => sum + c.stats.military.ground, 0) : 0;
-    const air = memberCountries.reduce((sum, c) => sum + c.stats.military.air, 0);
-    const naval = memberCountries.reduce((sum, c) => sum + (c.stats.isLandlocked ? 0 : c.stats.military.naval), 0);
-    const econ = memberCountries.reduce((sum, c) => sum + c.stats.economy, 0);
-    const pop = memberCountries.reduce((sum, c) => sum + c.stats.population, 0);
-    const readiness = memberCountries.reduce((sum, c) => sum + c.stats.warReadiness, 0) / memberCountries.length;
-
-    return (
-      (ground * 1.0 + air * 1.0 + naval * 0.7) * 1.0 +
-      (econ * 0.15) + (pop * 2)
-    ) * (0.4 + (readiness / 100) * 0.6);
-  };
-
-  const sorted = [...state.alliances].sort((a,b) => getPower(b) - getPower(a));
   const winner = sorted[0];
   const losers = sorted.slice(1);
 
