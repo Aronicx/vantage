@@ -61,7 +61,6 @@ export interface Country {
   allianceId?: string;
   provinces: Province[];
   recoveryEndYear?: number;
-  boomEndYear?: number;
 }
 
 export const POLITICAL_COLORS = [
@@ -82,6 +81,37 @@ const FLAG_PALETTES = [
 
 function getDistance(p1: Point, p2: Point): number {
   return Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
+}
+
+/**
+ * Calculates a score for a city to determine its fitness as a capital.
+ */
+function scoreCityForCapital(s: Settlement, c: Country, landPointSet: Set<string>, gridSize: number = 5): number {
+  // 1. Economic and Demographic Power (High Weight)
+  const powerScore = (s.stats.economy * 1.5) + (s.stats.population * 10);
+  
+  // 2. Military Value
+  const milScore = (s.stats.military.ground + s.stats.military.air + s.stats.military.naval) * 0.8;
+  
+  // 3. Coastal Access Bonus (Trade/Resource advantage)
+  let isCoastal = false;
+  const neighbors = [
+    {x: s.coords.x + gridSize, y: s.coords.y},
+    {x: s.coords.x - gridSize, y: s.coords.y},
+    {x: s.coords.x, y: s.coords.y + gridSize},
+    {x: s.coords.x, y: s.coords.y - gridSize}
+  ];
+  if (neighbors.some(n => !landPointSet.has(`${n.x},${n.y}`))) {
+    isCoastal = true;
+  }
+  const coastalBonus = isCoastal ? 50 : 0;
+
+  // 4. Strategic Safety (Distance from the country's center is a proxy for being "inland" and protected)
+  // Higher score for cities closer to the geometric center of the country's points
+  const distToCenter = getDistance(s.coords, c.center);
+  const safetyScore = Math.max(0, 100 - distToCenter);
+
+  return powerScore + milScore + coastalBonus + safetyScore;
 }
 
 /**
@@ -112,12 +142,12 @@ function updateCountryAggregates(country: Country): Country {
 /**
  * Ensures country centers, settlement owners, and internal provinces are consistent.
  */
-function rebuildCountryMetadata(country: Country, gridSize: number = 5): Country {
+function rebuildCountryMetadata(country: Country, landPointSet: Set<string>, gridSize: number = 5): Country {
   if (country.points.length === 0) return country;
 
   const pointSet = new Set(country.points.map(p => `${p.x},${p.y}`));
   
-  // 1. Validate settlements (remove those lost to other countries or water)
+  // 1. Validate settlements (remove those lost to other countries)
   country.settlements = country.settlements.filter(s => pointSet.has(`${s.coords.x},${s.coords.y}`));
 
   // 2. Recalculate geometric center
@@ -126,34 +156,42 @@ function rebuildCountryMetadata(country: Country, gridSize: number = 5): Country
   const newCenter = { x: avgX, y: avgY };
   country.center = newCenter;
 
-  // 3. Ensure a capital exists
-  let capital = country.settlements.find(s => s.type === 'capital');
-  if (!capital && country.points.length > 0) {
-    const potential = country.settlements.sort((a,b) => getDistance(a.coords, newCenter) - getDistance(b.coords, newCenter))[0];
-    if (potential) {
-      potential.type = 'capital';
-      capital = potential;
-    } else {
-      let closestPoint = country.points[0];
-      let minDist = Infinity;
-      for (const p of country.points) {
-        const d = getDistance(p, newCenter);
-        if (d < minDist) { minDist = d; closestPoint = p; }
-      }
-      capital = {
-        id: `${country.id}-cap-auto-${Date.now()}`,
-        name: "Provisional Capital",
-        type: 'capital',
-        coords: closestPoint,
-        ownerId: country.id,
-        stats: {
-          economy: 20,
-          population: 1,
-          military: { ground: 10, air: 5, naval: 2 }
-        }
-      };
-      country.settlements.push(capital);
+  // 3. Ensure a capital exists and is intelligently selected
+  let currentCapital = country.settlements.find(s => s.type === 'capital');
+  
+  // If no capital, or we need to re-evaluate (e.g. current one is not the best anymore)
+  if (!currentCapital && country.settlements.length > 0) {
+    // Score all cities and pick the best one
+    const scoredCities = country.settlements.map(s => ({
+      settlement: s,
+      score: scoreCityForCapital(s, country, landPointSet, gridSize)
+    }));
+    
+    scoredCities.sort((a, b) => b.score - a.score);
+    const best = scoredCities[0].settlement;
+    best.type = 'capital';
+    currentCapital = best;
+  } else if (!currentCapital && country.points.length > 0) {
+    // Emergent case: No settlements left, create a provisional one at the center
+    let closestPoint = country.points[0];
+    let minDist = Infinity;
+    for (const p of country.points) {
+      const d = getDistance(p, newCenter);
+      if (d < minDist) { minDist = d; closestPoint = p; }
     }
+    currentCapital = {
+      id: `${country.id}-cap-auto-${Date.now()}`,
+      name: "New Capital",
+      type: 'capital',
+      coords: closestPoint,
+      ownerId: country.id,
+      stats: {
+        economy: 20,
+        population: 0.5,
+        military: { ground: 5, air: 2, naval: 0 }
+      }
+    };
+    country.settlements.push(currentCapital);
   }
 
   // 4. Regenerate internal province zones
@@ -248,7 +286,11 @@ export async function generateNewWorld(width: number, height: number): Promise<G
       if (neighbors.some(n => !landPointSet.has(`${n.x},${n.y}`))) { isLandlocked = false; break; }
     }
     c.stats.isLandlocked = isLandlocked;
-    const geoBonus = isLandlocked ? 0.9 : 1.15;
+    
+    // Geography Bonuses
+    const econBonus = isLandlocked ? 0.9 : 1.15;
+    const growthBase = isLandlocked ? 1.008 : 1.014;
+    c.stats.growthRate = growthBase;
 
     // Place Capital
     c.settlements.push({ 
@@ -258,9 +300,9 @@ export async function generateNewWorld(width: number, height: number): Promise<G
       coords: c.center, 
       ownerId: c.id,
       stats: {
-        economy: 50 * geoBonus,
-        population: 2 * geoBonus,
-        military: { ground: 30 * geoBonus, air: 15 * geoBonus, naval: 10 * (isLandlocked ? 0 : geoBonus) }
+        economy: 50 * econBonus,
+        population: 2 * econBonus,
+        military: { ground: 30 * econBonus, air: 15 * econBonus, naval: 10 * (isLandlocked ? 0 : econBonus) }
       }
     });
 
@@ -276,17 +318,17 @@ export async function generateNewWorld(width: number, height: number): Promise<G
          coords: cityPoint,
          ownerId: c.id,
          stats: {
-           economy: (isOutpost ? 10 : 25) * geoBonus,
-           population: (isOutpost ? 0.5 : 1.5) * geoBonus,
+           economy: (isOutpost ? 10 : 25) * econBonus,
+           population: (isOutpost ? 0.5 : 1.5) * econBonus,
            military: { 
-             ground: (isOutpost ? 20 : 15) * geoBonus, 
-             air: (isOutpost ? 5 : 8) * geoBonus, 
-             naval: (isLandlocked ? 0 : (isOutpost ? 2 : 5) * geoBonus) 
+             ground: (isOutpost ? 20 : 15) * econBonus, 
+             air: (isOutpost ? 5 : 8) * econBonus, 
+             naval: (isLandlocked ? 0 : (isOutpost ? 2 : 5) * econBonus) 
            }
          }
        });
     }
-    rebuildCountryMetadata(c, gridSize);
+    rebuildCountryMetadata(c, landPointSet, gridSize);
   });
 
   try {
@@ -307,17 +349,29 @@ export async function generateNewWorld(width: number, height: number): Promise<G
     countries: finalCountries, 
     alliances: [], 
     width, height, gameYear: 2024, 
-    isPaused: true, gameStarted: false, simulationSpeed: 1 
+    isPaused: true, gameStarted: false, simulationSpeed: 1,
+    landPointSet: Array.from(landPointSet)
   };
 }
 
 export function processTick(state: GameState): GameState {
   if (state.isPaused || !state.gameStarted) return state;
+
   const updatedCountries = state.countries.map(c => {
-    const growth = c.stats.growthRate * (0.999 + Math.random() * 0.002);
+    let growth = c.stats.growthRate * (0.999 + Math.random() * 0.002);
     
+    // Recovery Logic: If capital was recently lost
+    if (c.recoveryEndYear && state.gameYear < c.recoveryEndYear) {
+      const isVerySmall = c.points.length < 150;
+      const penaltyFactor = isVerySmall ? 15 : 6; // 10-15x or 5-7x slower
+      
+      // Reduce the 'excess' growth above 1.0
+      const excess = growth - 1.0;
+      growth = 1.0 + (excess / penaltyFactor);
+    }
+
     // Recover War Readiness
-    const nextReadiness = Math.min(100, c.stats.warReadiness + 5);
+    const nextReadiness = Math.min(100, c.stats.warReadiness + 3);
 
     const nextSettlements = c.settlements.map(s => ({
       ...s,
@@ -347,28 +401,41 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
   const c2 = state.countries.find(c => c.id === id2);
   if (!c1 || !c2) return { state, result: 'Error' };
 
+  // Power is highly deterministic now. Luck is +/- 5%.
   const calculatePower = (c: Country) => (
-    c.stats.military.ground + c.stats.military.air + (c.stats.military.naval * 0.7) +
-    (c.stats.economy * 0.2) + (c.stats.population * 5)
-  ) * (c.stats.warReadiness / 100);
+    (c.stats.military.ground + c.stats.military.air + (c.stats.military.naval * 0.7)) * 1.0 +
+    (c.stats.economy * 0.15) + (c.stats.population * 2)
+  ) * (0.4 + (c.stats.warReadiness / 100) * 0.6);
 
-  const p1 = calculatePower(c1) * (0.98 + Math.random() * 0.04);
-  const p2 = calculatePower(c2) * (0.98 + Math.random() * 0.04);
+  const p1Base = calculatePower(c1);
+  const p2Base = calculatePower(c2);
+  
+  // Randomness is only 5% of total influence
+  const p1 = p1Base * (0.975 + Math.random() * 0.05);
+  const p2 = p2Base * (0.975 + Math.random() * 0.05);
 
   const winnerId = forcedWinnerId || (p1 > p2 ? c1.id : c2.id);
   const loserId = winnerId === id1 ? id2 : id1;
   
-  const winner = state.countries.find(c => c.id === winnerId)!;
-  const loser = state.countries.find(c => c.id === loserId)!;
+  const winner = { ...state.countries.find(c => c.id === winnerId)! };
+  const loser = { ...state.countries.find(c => c.id === loserId)! };
 
-  // Decrease War Readiness
-  winner.stats.warReadiness = Math.max(20, winner.stats.warReadiness - 15);
-  loser.stats.warReadiness = Math.max(10, loser.stats.warReadiness - 35);
+  // Decrease War Readiness significantly
+  winner.stats.warReadiness = Math.max(30, winner.stats.warReadiness - 12);
+  loser.stats.warReadiness = Math.max(10, loser.stats.warReadiness - 28);
 
+  // Target city closest to winner's mass
   const targetCity = [...loser.settlements]
     .sort((a,b) => getDistance(a.coords, winner.center) - getDistance(b.coords, winner.center))[0];
 
-  if (!targetCity) return { state, result: "No targets remaining." };
+  if (!targetCity) return { state, result: "Frontlines stable. No targets reachable." };
+
+  // Check if capital was captured
+  let capturedCapital = targetCity.type === 'capital';
+  if (capturedCapital) {
+    targetCity.type = 'city'; // Downgrade to regular city for the winner
+    loser.recoveryEndYear = state.gameYear + 25; // 25 years of struggle
+  }
 
   targetCity.ownerId = winnerId;
   winner.settlements.push(targetCity);
@@ -376,6 +443,7 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
 
   const transferredPoints: Point[] = [];
   const remainingPoints: Point[] = [];
+  const gridSize = 5;
 
   loser.points.forEach(p => {
     const distToCaptured = getDistance(p, targetCity.coords);
@@ -385,15 +453,16 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
       if (d < minDistToRemaining) minDistToRemaining = d;
     });
 
-    if (distToCaptured < minDistToRemaining) transferredPoints.push(p);
+    if (distToCaptured < minDistToRemaining * 0.85) transferredPoints.push(p);
     else remainingPoints.push(p);
   });
 
   winner.points.push(...transferredPoints);
   loser.points = remainingPoints;
 
-  const updatedWinner = rebuildCountryMetadata(winner);
-  const updatedLoser = rebuildCountryMetadata(loser);
+  const landSet = new Set(state.landPointSet);
+  const updatedWinner = rebuildCountryMetadata(winner, landSet, gridSize);
+  const updatedLoser = rebuildCountryMetadata(loser, landSet, gridSize);
 
   let nextCountries = state.countries.map(c => {
     if (c.id === winner.id) return updatedWinner;
@@ -401,11 +470,12 @@ export function executeBattle(state: GameState, id1: string, id2: string, forced
     return c;
   });
 
-  if (updatedLoser.points.length < 15 || updatedLoser.settlements.length === 0) {
+  if (updatedLoser.points.length < 20 || updatedLoser.settlements.length === 0) {
     nextCountries = nextCountries.filter(c => c.id !== loserId);
   }
 
-  return { state: { ...state, countries: nextCountries }, result: `Captured ${targetCity.name}. Territorial frontlines shifted.` };
+  const captureDesc = capturedCapital ? `Seized the capital ${targetCity.name}!` : `Captured ${targetCity.name}.`;
+  return { state: { ...state, countries: nextCountries }, result: `${captureDesc} Frontlines shifted.` };
 }
 
 export function renameCountry(state: GameState, id: string, newName: string): GameState {
@@ -424,7 +494,7 @@ export function mergeCountries(state: GameState, ids: string[], customName: stri
   const dominant = participants[0];
   const mergedId = `merged-${Date.now()}`;
   const allPoints = participants.flatMap(p => p.points);
-  const allSettlements = participants.flatMap(p => p.settlements).map(s => ({ ...s, ownerId: mergedId }));
+  const allSettlements = participants.flatMap(p => p.settlements).map(s => ({ ...s, ownerId: mergedId, type: s.type === 'capital' ? 'city' : s.type }));
 
   const merged: Country = {
     ...dominant,
@@ -442,7 +512,8 @@ export function mergeCountries(state: GameState, ids: string[], customName: stri
     }
   };
 
-  const final = rebuildCountryMetadata(merged);
+  const landSet = new Set(state.landPointSet);
+  const final = rebuildCountryMetadata(merged, landSet, 5);
   return { ...state, countries: state.countries.filter(c => !ids.includes(c.id)).concat(final) };
 }
 
@@ -466,16 +537,15 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
     partitions[best].push(p);
   });
 
+  const landSet = new Set(state.landPointSet);
   const nextCountries: Country[] = partitions.map((pts, i) => {
     const name = successorNames[i] || `${target.name} Splinter ${i+1}`;
     const id = `splinter-${targetId}-${i}-${Date.now()}`;
-    const share = pts.length / target.points.length;
     
-    // Split settlements by geography
     const ptSet = new Set(pts.map(p => `${p.x},${p.y}`));
     const splinterSettlements = target.settlements
       .filter(s => ptSet.has(`${s.coords.x},${s.coords.y}`))
-      .map(s => ({ ...s, ownerId: id }));
+      .map(s => ({ ...s, ownerId: id, type: 'city' as const }));
 
     const country: Country = {
       ...target,
@@ -493,7 +563,7 @@ export function splitCountry(state: GameState, targetId: string, parts: number, 
         warReadiness: target.stats.warReadiness
       }
     };
-    return rebuildCountryMetadata(country);
+    return rebuildCountryMetadata(country, landSet, 5);
   }).filter(c => c.points.length > 5);
 
   return { ...state, countries: state.countries.filter(c => c.id !== targetId).concat(nextCountries) };
@@ -545,4 +615,5 @@ export interface GameState {
   isPaused: boolean;
   gameStarted: boolean;
   simulationSpeed: number;
+  landPointSet: string[];
 }
